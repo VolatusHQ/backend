@@ -1,0 +1,32 @@
+{
+  "name": "@volatus/service-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared runtime for Volatus backend services: config, logging, the tx journal, wallet sends, chunked log scans, alerts, and the loop harness.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^17.4.2",
+    "viem": "^2.56.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

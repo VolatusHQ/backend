@@ -1,2 +1,11 @@
 packages:
   - "apps/*"
+  - "packages/*"
+  - "services/*"
+
+# pnpm 10 does not run a dependency's install scripts unless it is listed here.
+# better-sqlite3 is native and needs its prebuild fetched, so without this a
+# fresh clone installs cleanly and then segfaults the first time the tx journal
+# opens. Listing it is the fix; `pnpm approve-builds` writes the same thing.
+onlyBuiltDependencies:
+  - better-sqlite3
