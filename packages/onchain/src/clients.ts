@@ -1,5 +1,5 @@
 import { createPublicClient, http, type HttpTransport, type PublicClient } from "viem";
-import { arcTestnet, unichainSepolia } from "./chains";
+import { arcTestnet, unichainSepolia } from "./chains.js";
 
 /**
  * One read-only client per chain, created at module scope so a request does

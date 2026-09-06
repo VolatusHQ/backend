@@ -1,0 +1,26 @@
+{
+  "name": "@volatus/keeper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Service 2 of BACKEND_HANDOFF.md: gas-aware sync() keeper for SigmaStream on Arc.",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/index.js start",
+    "status": "node dist/index.js status"
+  },
+  "dependencies": {
+    "@volatus/onchain": "workspace:*",
+    "@volatus/service-kit": "workspace:*",
+    "viem": "^2.56.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

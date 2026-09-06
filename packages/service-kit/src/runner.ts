@@ -52,7 +52,12 @@ export function runLoop(opts: RunLoopOptions): RunningLoop {
     const spread = jitterMs > 0 ? Math.floor((Math.random() * 2 - 1) * jitterMs) : 0;
     const delay = Math.max(0, opts.intervalMs + spread);
     timer = setTimeout(() => void runOnce(), delay);
-    timer.unref?.();
+
+    // Deliberately NOT unref'd. A keeper or reporter is usually the only thing
+    // its process is doing, so an unref'd timer lets Node decide the event loop
+    // is empty and exit between ticks -- the service starts, logs that it
+    // started, and dies before the first tick ever fires. `stop()` clears the
+    // timer, so this does not hold a shutdown open.
   }
 
   async function runOnce(): Promise<void> {

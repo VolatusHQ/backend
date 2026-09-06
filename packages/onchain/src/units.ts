@@ -7,7 +7,7 @@
  * converts between the two scales — see `addresses.ts` and README.md.
  */
 
-import { USDC_DECIMALS } from "./addresses";
+import { USDC_DECIMALS } from "./addresses.js";
 
 /**
  * WAD to the ratio a `pct()`-style formatter expects. `1e18` is 100%, so
