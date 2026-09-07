@@ -83,7 +83,7 @@ export async function settleEpoch(params: SettleParams): Promise<SettleResult> {
   });
 
   if (result.ok) {
-    const e = await readVaultEpoch(params.unichainClient, params.epochId);
+    let e = await readVaultEpoch(params.unichainClient, params.epochId);
 
     // Cross-check against the EpochSettled event emitted by this very tx,
     // per BACKEND_HANDOFF.md: "Or take it from the EpochSettled(epochId,
@@ -92,6 +92,32 @@ export async function settleEpoch(params: SettleParams): Promise<SettleResult> {
     // understanding why they disagree would be reporting a wrong payoff --
     // exactly the trust bound DECISIONS.md §12 draws around this service.
     const decoded = decodeEpochSettledLogs(result.receipt.logs).find((l) => l.args.epochId === params.epochId);
+
+    // ...but a disagreement is far more likely to be a stale read than a
+    // real inconsistency. Unichain's RPC serves reads from behind the head:
+    // during this epoch's own settlement `epoch(3).payoffWad` came back as 0
+    // for several seconds after the tx that set it to 1e18 was mined, and the
+    // same lag was observed on `epochCount` and on an ERC-20 `allowance`.
+    //
+    // Refusing on the first disagreement is the wrong failure mode, because
+    // `settle` is one-shot: once it has landed there is no retrying it, so a
+    // service that gives up here strands the epoch and every subscriber gets
+    // refunded instead of paid. Re-read against the block the receipt landed
+    // in until the node catches up, and only treat a persistent disagreement
+    // as real.
+    if (decoded && decoded.args.payoff !== e.payoffWad) {
+      for (let attempt = 0; attempt < 10 && decoded.args.payoff !== e.payoffWad; attempt++) {
+        await new Promise((r) => setTimeout(r, 1_500));
+        e = await readVaultEpoch(params.unichainClient, params.epochId);
+      }
+      if (decoded.args.payoff === e.payoffWad) {
+        params.logger.warn(
+          `settle(${key}): epoch() read lagged the receipt and has now caught up`,
+          { epochId: key, payoffWad: e.payoffWad.toString() },
+        );
+      }
+    }
+
     if (decoded && decoded.args.payoff !== e.payoffWad) {
       await params.alert(
         "error",
