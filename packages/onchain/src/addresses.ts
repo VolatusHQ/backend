@@ -104,6 +104,18 @@ export const SIGMA_STREAM: Address = "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9
 export const LIVE_EPOCH_ID = 2n;
 
 /**
+ * The Arc block `SIGMA_STREAM` was deployed in.
+ *
+ * Log scanning must start here, never at 0. Arc prunes history — `fromBlock: 0`
+ * returns `4444 pruned history unavailable` — and a full-range scan is tens of
+ * millions of blocks, which trips the RPC's rate limit long before it finds
+ * anything. Nothing before this block can carry an event from this contract,
+ * because the contract did not exist yet.
+ */
+export const SIGMA_STREAM_DEPLOY_BLOCK = 60_484_110n;
+
+
+/**
  * USDC on Arc as an ERC-20, 6 decimals. Also the native gas asset under an
  * 18-decimal view — the same funds seen two ways. See `chains.ts`.
  */

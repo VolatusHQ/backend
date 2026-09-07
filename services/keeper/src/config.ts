@@ -1,3 +1,4 @@
+import { SIGMA_STREAM_DEPLOY_BLOCK } from "@volatus/onchain";
 /**
  * The keeper's environment. Deliberately not `commonConfigShape` wholesale —
  * this service never touches Unichain and never holds the reporter's key, so
@@ -30,7 +31,7 @@ export const keeperConfigShape = {
    *  whether that evaluation actually sends anything — this is not the naive send interval. */
   KEEPER_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   /** Arc block to start Subscribed-log scanning from when the journal has no cursor yet. */
-  KEEPER_SEED_BLOCK: z.coerce.bigint().default(0n),
+  KEEPER_SEED_BLOCK: z.coerce.bigint().default(SIGMA_STREAM_DEPLOY_BLOCK),
   /** `start` refuses to run below this balance (USDC, on Arc gas IS this balance). */
   KEEPER_MIN_BALANCE_USDC: z.coerce.number().nonnegative().default(0.05),
 };

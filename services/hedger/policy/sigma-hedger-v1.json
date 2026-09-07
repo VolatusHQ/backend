@@ -1,0 +1,70 @@
+{
+  "policyId": "sigma-hedger-v1",
+  "description": "Privy session-signer policy for the Volatus hedger agent. Maps README.md's abstract policy (allow streamPremium|adjustCoverage on SigmaStream only, deny all other ERC-20 transfers, cap cumulative spend at the mandate) onto SigmaStream's real deployed ABI and selectors on Arc Testnet.",
+  "chain": {
+    "caip2": "eip155:5042002",
+    "name": "Arc Testnet",
+    "note": "Gas on Arc is USDC itself (BRIEF.md) — this policy governs which contract calls the session signer may make, not gas sponsorship, which is a separate Privy/Circle concern out of scope here."
+  },
+  "target": {
+    "SigmaStream": "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9",
+    "USDC": "0x3600000000000000000000000000000000000000"
+  },
+  "rules": [
+    {
+      "name": "streamPremium",
+      "description": "subscribe() and fund() move the delegator's own USDC into a stream they already authorized, from their own wallet, into subscription.funded for an epoch they chose. Never a transfer to a third party.",
+      "contract": "SigmaStream",
+      "target": "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9",
+      "effect": "allow",
+      "methods": [
+        { "name": "subscribe", "selector": "0x6c9eb774", "abi": "subscribe(uint256 epochId, uint256 ratePerSecond, uint256 coverageNotional)" },
+        { "name": "fund", "selector": "0xa65e2cfd", "abi": "fund(uint256 epochId, uint256 amount)" }
+      ]
+    },
+    {
+      "name": "adjustCoverage",
+      "description": "Re-prices a live subscription's rate and notional. adjust() runs _sync() first (contracts/src/SigmaStream.sol), so every second already elapsed bills at the OLD rate before the new one takes effect — re-rating can never retroactively re-price coverage already accrued. This is the seam the hedger agent drives (BACKEND_HANDOFF.md § Service 3).",
+      "contract": "SigmaStream",
+      "target": "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9",
+      "effect": "allow",
+      "methods": [
+        { "name": "adjust", "selector": "0x6f871cec", "abi": "adjust(uint256 epochId, uint256 newRatePerSecond, uint256 newCoverageNotional)" }
+      ]
+    },
+    {
+      "name": "approveStreamSpend",
+      "description": "USDC.approve with spender constrained to SigmaStream only. Without this rule fund() reverts on the ERC-20 allowance check before it ever reaches the contract's own logic — easy to miss, called out explicitly in BACKEND_HANDOFF.md and PHASES.md.",
+      "contract": "USDC",
+      "target": "0x3600000000000000000000000000000000000000",
+      "effect": "allow",
+      "methods": [
+        {
+          "name": "approve",
+          "selector": "0x095ea7b3",
+          "abi": "approve(address spender, uint256 amount)",
+          "constrainedArgs": { "spender": "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9" }
+        }
+      ]
+    },
+    {
+      "name": "denyEverythingElse",
+      "description": "Default-deny. This is an allowlist: any ERC-20 transfer/transferFrom, any approve to a spender other than SigmaStream, any call to a contract other than SigmaStream or USDC, is denied. Rules above are the entire allowed surface.",
+      "effect": "deny",
+      "default": true
+    }
+  ],
+  "spendCap": {
+    "description": "Cumulative USDC moved via fund() across the life of one mandate. Enforced two ways, deliberately redundant: Privy's TEE is asked to enforce this numeric cap against this policyId, and this service independently re-derives cumulative spend from its own journal before ever attempting a fund() (services/hedger/src/spend.ts) and refuses to exceed it regardless of what Privy would allow. Neither is a substitute for the other — the TEE bound holds even if this service's code is wrong or compromised; the journal-side check holds even if a specific Privy policy instance was misconfigured.",
+    "asset": "USDC",
+    "chain": "Arc Testnet",
+    "cumulativeLimitField": "Mandate.maxCumulativeSpendUsdc (services/hedger/src/mandate.ts)",
+    "note": "A concrete numeric limit is set per mandate at policy-instantiation time (one Privy policy grant per user session, scoped to one mandate), not hardcoded in this file."
+  },
+  "expiry": {
+    "description": "The session signer's grant should be set to expire no later than Mandate.expiresAt. An expired mandate that Privy still honors would be a provisioning bug, not something this policy file can fix from the agent side — the agent's own code also stops attempting any action once Mandate.expiresAt has passed (mandate.ts's mandateExpired), independent of what Privy would still allow.",
+    "field": "Mandate.expiresAt (services/hedger/src/mandate.ts)"
+  },
+  "verified": false,
+  "verificationNote": "Selectors were computed and confirmed against the deployed SigmaStream ABI with `cast sig` (see services/hedger/src/delegation/signer.test.ts, which asserts the same selectors from encoded calldata). PRIVY_APP_ID and PRIVY_APP_SECRET were not available in this environment (BACKEND_HANDOFF.md's environment table lists them unset), so this policy has never been submitted to Privy's policy API or exercised by a real TEE. src/delegation/privySessionSigner.ts is unit-tested against a mocked client only — see that file's header comment for exactly what is and is not verified."
+}

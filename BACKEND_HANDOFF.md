@@ -20,6 +20,34 @@ unblock the demo. Services 3 and 4 are the agents the Circle track wants to see.
 
 ## Ground truth
 
+> **Superseded 2026-09-05 — read this box first.** Everything below this box was verified
+> 2026-09-04, against the *old* `SigmaStream` (`settlementReporter` immutable, set to a key
+> nobody holds) and the *old* `SigmaOracle` (`curator` immutable, same problem). Both were
+> redeployed on 2026-09-05 and Phase 5 (this file's own Services 1–2) then ran for real,
+> end to end, against the new ones:
+>
+> | | Address | Note |
+> |---|---|---|
+> | `SigmaStream` (live) | `0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9` | has `adjust`; old one at `0xD7EeD2a6…C074` did not |
+> | `settlementReporter` | `0xFf54812Fc9EC92E51a22f67a92Cd2c09a049E30c` | team-held, replaces `0x364EDC06…5609` |
+> | `SigmaOracle` (live) | `0x94F50Fb5b417024F66A80d6515b52E25426C59e5` | replaces `0xd7602c41…a7c` |
+>
+> Proof, not assertion: `openEpoch(3)` → variance accrued from real swaps → `sync` found the
+> subscription from its `Subscribed` log → `settle(3)` on Unichain (payoff `1e18`) →
+> `reportPayoff(3)` on Arc (tx `0x4d600f4a70f37c248a01014e8b217e6c5d86a1bc15f133ab7f5385b76f8b67b7`)
+> → `claim(3)` paid **1.941588 USDC** + 0.169 refund (tx
+> `0xb12bf74c5145cec384ff1e363387706c6c8624a678e31060da1ca99821722bc8`). Arithmetic reconciled
+> exactly: `2_000_000 × 1.0 × 831/856 = 1_941_588`.
+>
+> Live now: Arc epoch 2 is open, unreported, `coverageEnd 1789153388`; its one subscription has
+> **run dry** (`funded 0`, `runwaySeconds 0`) — the lapsed-coverage fail-safe, not a bug. Epoch 3
+> is reported and claimed. `capacityPool ≈ 5889412`, `totalShares = 5000000`.
+>
+> The rest of this section (2026-09-04 state, old addresses, "epoch 1 unreported") is left
+> intact below because Services 1 and 2 are already built against it and their logic does not
+> change — it is the situation that motivated the redeploy, not a live target any more. Use the
+> box above for addresses; use the prose below for how the services reason about the chain.
+
 Verified live 2026-09-04 by direct RPC call. Reproduce any of it with the `cast` commands below.
 
 ### Chains
@@ -103,23 +131,26 @@ cast call 0xD7EeD2a64762A7038d64886882161bA1b1EfC074 \
    lesson to carry into the reporter service: `reportDeadline` is a real operational deadline
    and missing it costs a payout.** Alarm well before it, not on it.
 
-### ⚠ The reporter key is fixed at construction
+### ⚠ The reporter key was fixed at construction — resolved by the 2026-09-05 redeploy
 
 ```bash
+# The command below still returns the OLD, dead contract's answer — kept as the historical
+# demonstration of the problem. Do not call it expecting the live reporter.
 cast call 0xD7EeD2a64762A7038d64886882161bA1b1EfC074 "settlementReporter()(address)" \
   --rpc-url https://rpc.testnet.arc.network
-# -> 0x364EDC06254874e62FF4AD8fA4d9a45238cb5609
+# -> 0x364EDC06254874e62FF4AD8fA4d9a45238cb5609   (a key nobody on the team holds)
 ```
 
-`settlementReporter` is `immutable`. Only that address can call `openEpoch` and `reportPayoff`.
-So either you get that key, or `SigmaStream` is redeployed with a reporter address you control.
+`settlementReporter` is `immutable`. Only that address can call `openEpoch` and `reportPayoff`,
+which is why the old contract above could never be reported against.
 
-**Phase 3 redeploys `SigmaStream` anyway** (to add the missing `adjust` function — see
-`PHASES.md`). Coordinate: that redeploy is the one chance to set the reporter to something
-sensible. Ask for a 2-of-3 multisig or at minimum a dedicated key that lives only in the
-reporter service's secret store. It is the only trust surface in the contract — it can report a
-wrong payoff for coverage on Arc, though it can never touch vault collateral, change what
-VAR-LONG/VAR-SHORT redeem for, or stop a subscriber recovering unspent premium.
+**Resolved.** `SigmaStream` was redeployed on 2026-09-05 at `0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9`
+with `settlementReporter` set to `0xFf54812Fc9EC92E51a22f67a92Cd2c09a049E30c`, a key the team
+holds — confirm live with the same `cast call` against the new address. It is the only trust
+surface in the contract: it can report a wrong payoff for coverage on Arc, though it can never
+touch vault collateral, change what VAR-LONG/VAR-SHORT redeem for, or stop a subscriber
+recovering unspent premium. Whether that key should move to a multisig is still open — see the
+questions at the end of this file.
 
 ---
 
@@ -341,8 +372,8 @@ ARC_TESTNET_RPC=https://rpc.testnet.arc.network
 
 SIGMA_HOOK=0x9215C247Ec3C0082A4bfC26515427c2737D1d040
 SIGMA_VAULT=0xF45894c8384c440FC63Da67Bc6050e77FcaF4e83
-SIGMA_ORACLE=0xd7602c41f01dD3a91F8768869D95f9529a112a7c
-SIGMA_STREAM=0xD7EeD2a64762A7038d64886882161bA1b1EfC074   # changes after the phase-3 redeploy
+SIGMA_ORACLE=0x94F50Fb5b417024F66A80d6515b52E25426C59e5
+SIGMA_STREAM=0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9   # redeployed 2026-09-05, see § Ground truth
 ARC_USDC=0x3600000000000000000000000000000000000000
 MEASURED_POOL_ID=0xc60f25d0a8e2ec722cc0d7f2cff8179340bd5a034351319ada88292d23f21b89
 
@@ -392,6 +423,7 @@ depends on an off-chain component. Do not build anything that breaks that senten
 
 Questions that need a decision from the team, not from you:
 
-- Who holds the reporter key after the phase-3 redeploy? (multisig strongly preferred)
+- The redeploy set the reporter to a single team-held EOA (`0xFf54812Fc…9E30c`). Should it move
+  to a multisig? (still open, multisig strongly preferred for anything beyond testnet)
 - What `reportDeadline` margin is acceptable?
 - Privy session signer, or Circle Modular Wallet session key?
