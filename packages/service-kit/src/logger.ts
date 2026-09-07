@@ -2,14 +2,19 @@
  * Structured JSON-lines logging to stdout, with two guarantees the rest of
  * this package (and every service built on it) relies on:
  *
- * 1. A secret can never reach a printed line. Any string value matching
- *    `/0x[0-9a-fA-F]{64}/` — a private key's exact shape — is replaced with
- *    `[REDACTED_KEY]` wherever it appears, including inside a longer string
- *    (an error message that happened to interpolate one). Independently, any
- *    field whose *name* looks like `privateKey`, `PRIVATE_KEY`, `secret` or
- *    `apiKey` (case-insensitive, with or without an underscore) is redacted
- *    regardless of its value or type — this catches a secret that for some
- *    reason isn't hex-shaped.
+ * 1. A secret can never reach a printed line. Any field whose *name* looks
+ *    like `privateKey`, `PRIVATE_KEY`, `secret` or `apiKey` (case-insensitive,
+ *    underscore optional) is redacted regardless of its value or type — this
+ *    is the load-bearing rule, and it catches a secret that isn't hex-shaped.
+ *    Separately, any string matching `/0x[0-9a-fA-F]{64}/` — a private key's
+ *    shape — is replaced with `[REDACTED_KEY]` wherever it appears, including
+ *    interpolated inside a longer error message.
+ *
+ *    That value rule has one deliberate exception: a transaction hash is the
+ *    same shape as a private key, so fields named `hash`/`txHash`/`blockHash`
+ *    /`poolId` and friends keep their values. Without the exception every tx
+ *    hash the services logged came out as `[REDACTED_KEY]`, destroying the
+ *    audit trail that is the entire reason for logging a send.
  * 2. A `bigint` anywhere in the fields never throws. `JSON.stringify` throws
  *    on a raw bigint ("Do not know how to serialize a BigInt"), and every
  *    chain quantity in this codebase is a bigint — this is the single most
@@ -32,6 +37,25 @@ const PRIVATE_KEY_VALUE_RE = /0x[0-9a-fA-F]{64}/g;
  * `CIRCLE_API_KEY`), case-insensitive, underscore optional. */
 const SENSITIVE_KEY_RE = /private_?key|secret|api_?key/i;
 
+/**
+ * Field names whose values are 0x + 64 hex *by definition* and are not
+ * secrets: transaction and block hashes, pool ids, merkle roots, salts.
+ *
+ * Without this the value regex above cannot tell a private key from a
+ * transaction hash -- they are the same shape -- so it ate every tx hash the
+ * services logged and replaced it with `[REDACTED_KEY]`. That is worse than
+ * useless: the whole point of logging a send is to leave an auditable trail,
+ * and a reporter that cannot tell you which transaction reported a payoff has
+ * lost the only evidence that it did.
+ *
+ * The real protection against leaking a key is `SENSITIVE_KEY_RE` matching on
+ * the field *name*, which is unaffected by this and still fires regardless of
+ * the value's shape. A private key arriving under a field named `txHash`
+ * would be a bug at the call site, not something a log filter should be
+ * relied on to catch.
+ */
+const HASH_SHAPED_KEY_RE = /^(tx_?hash|transaction_?hash|block_?hash|hash|pool_?id|root|salt|digest|commitment)$/i;
+
 const REDACTED = "[REDACTED_KEY]";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -45,9 +69,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * `message`/`stack` are non-enumerable and would otherwise stringify to
  * `{}`) are unpacked into plain fields.
  */
-export function sanitizeForLog(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+export function sanitizeForLog(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+  /** Name of the field this value sits under, when it has one. Lets a
+   *  hash-shaped field keep its value -- see HASH_SHAPED_KEY_RE. */
+  fieldName?: string,
+): unknown {
   if (typeof value === "bigint") return value.toString();
-  if (typeof value === "string") return value.replace(PRIVATE_KEY_VALUE_RE, REDACTED);
+  if (typeof value === "string") {
+    if (fieldName !== undefined && HASH_SHAPED_KEY_RE.test(fieldName)) return value;
+    return value.replace(PRIVATE_KEY_VALUE_RE, REDACTED);
+  }
   if (value === null || value === undefined) return value;
 
   if (value instanceof Error) {
@@ -69,7 +102,7 @@ export function sanitizeForLog(value: unknown, seen: WeakSet<object> = new WeakS
     seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [key, v] of Object.entries(value)) {
-      out[key] = SENSITIVE_KEY_RE.test(key) ? REDACTED : sanitizeForLog(v, seen);
+      out[key] = SENSITIVE_KEY_RE.test(key) ? REDACTED : sanitizeForLog(v, seen, key);
     }
     return out;
   }

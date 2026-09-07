@@ -134,3 +134,38 @@ describe("logger envelope", () => {
     expect(JSON.parse(lines[1])).toMatchObject({ epochId: "2", extra: true });
   });
 });
+
+describe("hash-shaped fields are not mistaken for private keys", () => {
+  // Regression: a tx hash and a private key are both 0x + 64 hex, so the
+  // value-shape rule alone redacted every transaction hash the services
+  // logged. Caught when the reporter's "openEpoch(3) landed" line came out
+  // with hash "[REDACTED_KEY]" -- i.e. the proof of the send was destroyed by
+  // the thing meant to make the logs safe to keep.
+  const TX_HASH = "0x789883304e8c3fd2b904bc724da6afbccca060ce9b32d2b25d7380ec5bd54c22";
+  const FAKE_KEY = "0x" + "ab".repeat(32);
+
+  function capture(fields: Record<string, unknown>): string {
+    const lines: string[] = [];
+    const log = createLogger({ service: "t", write: (l) => lines.push(l) });
+    log.info("m", fields);
+    return lines.join("");
+  }
+
+  it("keeps a tx hash under hash-shaped field names", () => {
+    for (const name of ["hash", "txHash", "transactionHash", "blockHash", "poolId"]) {
+      expect(capture({ [name]: TX_HASH }), `${name} was redacted`).toContain(TX_HASH);
+    }
+  });
+
+  it("still redacts a key by field name, whatever the field is called elsewhere", () => {
+    const out = capture({ privateKey: FAKE_KEY, REPORTER_PRIVATE_KEY: FAKE_KEY });
+    expect(out).not.toContain(FAKE_KEY);
+    expect(out).toContain("[REDACTED_KEY]");
+  });
+
+  it("still redacts a key-shaped value under an ordinary field name", () => {
+    // `rawSigner` is not hash-shaped and not name-sensitive, so the value
+    // rule must still fire there.
+    expect(capture({ rawSigner: FAKE_KEY })).not.toContain(FAKE_KEY);
+  });
+});
