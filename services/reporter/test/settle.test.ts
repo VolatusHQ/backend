@@ -185,6 +185,10 @@ describe("settleEpoch", () => {
         logger: fakeLogger(),
         alert,
         dryRun: false,
+        // Exhaust the re-read window instantly: this disagreement is real and
+        // persistent, not the RPC lag the retries exist to absorb.
+        payoffRecheckAttempts: 3,
+        payoffRecheckDelayMs: 0,
       });
 
       expect(result).toEqual({ settled: false, payoffWad: null });
@@ -216,5 +220,55 @@ describe("settleEpoch", () => {
     expect(send).not.toHaveBeenCalled();
     expect(claim).not.toHaveBeenCalled();
     expect(result).toEqual({ settled: false, payoffWad: null });
+  });
+});
+
+describe("settleEpoch tolerates a lagging epoch() read", () => {
+  // Regression, found by running it: settling the demo epoch on Unichain,
+  // EpochSettled carried payoff 1e18 while epoch(3).payoffWad still read 0
+  // for several seconds -- the node was serving reads from behind the head.
+  // The reporter refused to report, and settle() is one-shot, so the epoch
+  // would have been stranded and every subscriber refunded instead of paid.
+  it("re-reads until the node catches up, then reports the agreed payoff", async () => {
+    const PAYOFF = 1_000_000_000_000_000_000n;
+    let reads = 0;
+    let settledOnChain = false;
+    const unichainClient = {
+      readContract: vi.fn(async () => {
+        if (!settledOnChain) return baseVaultEpoch;
+        reads += 1;
+        // First two reads after the write lag; the third catches up.
+        return reads < 3
+          ? { ...baseVaultEpoch, settled: true, payoffWad: 0n }
+          : { ...baseVaultEpoch, settled: true, payoffWad: PAYOFF };
+      }),
+      getBlockNumber: vi.fn(async () => 62_301_001n),
+    } as unknown as PublicClient;
+    const send = vi.fn(async () => {
+      settledOnChain = true;
+      return { ok: true, hash: "0xsettle", receipt: { logs: [] } };
+    });
+    const unichainWallet = { address: "0x0", send, balance: vi.fn(), requireBalance: vi.fn() } as unknown as Wallet;
+    vi.mocked(decodeEpochSettledLogs).mockReturnValue([{ args: { epochId: 2n, payoff: PAYOFF } }] as never);
+    const alert = vi.fn();
+    const recordDone = vi.fn();
+    const recordFailed = vi.fn();
+
+    const result = await settleEpoch({
+      epochId: 2n,
+      journal: fakeJournal({ recordDone, recordFailed }),
+      unichainClient,
+      unichainWallet,
+      logger: fakeLogger(),
+      alert,
+      dryRun: false,
+      payoffRecheckAttempts: 5,
+      payoffRecheckDelayMs: 0,
+    });
+
+    expect(result).toEqual({ settled: true, payoffWad: PAYOFF });
+    expect(alert).not.toHaveBeenCalled();
+    expect(recordFailed).not.toHaveBeenCalled();
+    expect(recordDone).toHaveBeenCalled();
   });
 });

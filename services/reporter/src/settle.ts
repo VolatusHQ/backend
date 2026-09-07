@@ -23,6 +23,13 @@ export interface SettleParams {
   logger: Logger;
   alert: AlertFn;
   dryRun: boolean;
+  /** How many times to re-read epoch() when it disagrees with the
+   *  EpochSettled event, before treating the disagreement as real. The
+   *  default tolerates the several seconds of read lag Unichain's RPC was
+   *  measured serving after a write. Tests override it to stay fast. */
+  payoffRecheckAttempts?: number;
+  /** Delay between those re-reads, ms. */
+  payoffRecheckDelayMs?: number;
 }
 
 export interface SettleResult {
@@ -106,8 +113,10 @@ export async function settleEpoch(params: SettleParams): Promise<SettleResult> {
     // in until the node catches up, and only treat a persistent disagreement
     // as real.
     if (decoded && decoded.args.payoff !== e.payoffWad) {
-      for (let attempt = 0; attempt < 10 && decoded.args.payoff !== e.payoffWad; attempt++) {
-        await new Promise((r) => setTimeout(r, 1_500));
+      const attempts = params.payoffRecheckAttempts ?? 10;
+      const delayMs = params.payoffRecheckDelayMs ?? 1_500;
+      for (let attempt = 0; attempt < attempts && decoded.args.payoff !== e.payoffWad; attempt++) {
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
         e = await readVaultEpoch(params.unichainClient, params.epochId);
       }
       if (decoded.args.payoff === e.payoffWad) {
