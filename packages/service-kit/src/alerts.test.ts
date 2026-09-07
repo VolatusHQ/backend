@@ -54,6 +54,39 @@ describe("deadlineAlarm", () => {
     expect(alert).not.toHaveBeenCalled();
   });
 
+  it("does NOT fire at exactly deadline - margin -- arms strictly after that instant, not at it", async () => {
+    // BRIEF.md asks for this boundary precisely. `armAt = deadline - margin`; the
+    // guard is `now <= armAt` -> don't fire, so `now === armAt` is still "not yet".
+    // Documented here because it is easy to assume the margin window is closed
+    // (inclusive) at its own edge -- it isn't, by one second -- and every real
+    // margin in this codebase is measured in hours, so the one-second gap is
+    // immaterial to the safety property but worth pinning down explicitly.
+    const alert = vi.fn();
+    const fired = await deadlineAlarm({
+      name: "reportPayoff(2)",
+      deadline,
+      margin,
+      isDone: () => false,
+      alert,
+      now: () => deadline - margin,
+    });
+    expect(fired).toBe(false);
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it("fires at exactly one second past deadline - margin -- the earliest instant it can", async () => {
+    const alert = vi.fn();
+    const fired = await deadlineAlarm({
+      name: "reportPayoff(2)",
+      deadline,
+      margin,
+      isDone: () => false,
+      alert,
+      now: () => deadline - margin + 1,
+    });
+    expect(fired).toBe(true);
+  });
+
   it("fires (as a warning) once inside the margin, before the deadline", async () => {
     const alert = vi.fn();
     const fired = await deadlineAlarm({

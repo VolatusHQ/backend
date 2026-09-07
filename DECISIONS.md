@@ -552,6 +552,60 @@ That last line is the solvency invariant holding exactly, on chain, at settlemen
 
 ---
 
+## 15. `reclaimUnreported` refunds an amount that depends on keeper cadence
+
+**Found by:** an adversarial pass over the services on 2026-09-05, then confirmed against the
+contract source. This is an observation about deployed behaviour, not a change.
+
+`claim`, `fund`, `adjust` and `cancel` all call `_sync` before touching a balance — four call
+sites in `SigmaStream.sol`. **`reclaimUnreported` does not.** It refunds `s.funded` as it stands
+at the last sync:
+
+```solidity
+function reclaimUnreported(uint256 epochId) external nonReentrant returns (uint256 refund) {
+    ...
+    refund = s.funded;   // no _sync first
+    s.funded = 0;
+```
+
+**Why that matters.** Premium already swept into `capacityPool` stays with the underwriters;
+premium for coverage-seconds that elapsed but were never synced is refunded to the subscriber.
+So the split between the two, on the fail-safe path, is decided by **when someone last called
+the permissionless `sync`** — an off-chain timing artifact — and not by any rule the contract
+states. Two subscribers in identical positions, whose epochs both lapse unreported, receive
+different refunds depending only on how recently a keeper happened to poke them.
+
+The underwriters are the ones who lose: they bore the risk for that unsynced tail and do not
+collect the premium for it.
+
+**Is it wrong?** Arguably not, and deliberately not being changed. The contract's own comment
+frames the fail-safe as "coverage simply never existed", and under that reading refunding
+unspent premium generously to the buyer is the fail-safe direction — the same direction
+everything else in this contract leans. A stricter reading would sync first, so the split falls
+where the coverage actually accrued. Both are defensible; the deployed one favours the buyer.
+
+**It is not a theft vector.** `sync` is permissionless, so an underwriter who cares can call it
+themselves and settle the split before `reportDeadline`. It is a race, not an exploit.
+
+**What the backend does about it.** The keeper forces a final sync as an epoch approaches
+`coverageEnd`, which fully determines the split (`_sync` clamps to `coverageEnd`, so nothing
+accrues past it). Getting that wrong is how this surfaced: the keeper was dropping a
+subscription from its registry whenever the drop *rule* fired, without checking that the final
+sync had actually **landed** — so a dry run, a missing wallet, or one failed send at the wrong
+moment permanently stopped it from ever sweeping that tail. Fixed, with tests, in
+`services/keeper/src/tick.ts`.
+
+Note the interaction with the keeper's economics: it deliberately syncs *less* often than a
+fixed interval, because at demo rates gas is a large fraction of the premium collected
+(`BACKEND_HANDOFF.md` § Service 2). Syncing less often widens exactly this window. The forced
+sweep at `coverageEnd` is what keeps that trade-off from costing underwriters money.
+
+**If `SigmaStream` is ever redeployed again**, calling `_sync` at the top of `reclaimUnreported`
+would remove the dependency on off-chain timing entirely. It is a one-line change. It was not
+worth invalidating a working deployment and a proven end-to-end run for.
+
+---
+
 ## Verified environment facts
 
 Not deviations — things confirmed rather than assumed, recorded so nobody re-derives them.

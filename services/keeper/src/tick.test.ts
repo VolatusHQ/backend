@@ -231,6 +231,93 @@ describe("runKeeperTick", () => {
     expect(listActiveSubscriptions(journal)).toHaveLength(0);
   });
 
+  it("does NOT drop a subscription when the forced final sync at coverageEnd fails to land", async () => {
+    // Same shape as the test above -- epoch just ended, a sync is due -- except this
+    // time the send comes back ok:false (e.g. a transient RPC error, or the tx
+    // reverted). The unswept premium between lastSync and coverageEnd never made it
+    // into capacityPool, so the registry must keep tracking this subscription for a
+    // retry on the next tick rather than dropping it as if the sweep had happened.
+    seedSubscription(journal, 2n, SUBSCRIBER_A);
+    const coverageEnd = 1_000_000n;
+    const epoch: EpochState = { coverageStart: 0n, coverageEnd, reportDeadline: 2_000_000n, reported: false, payoffWad: 0n, totalCoverageSold: 0n };
+    const now = coverageEnd + 500n; // well past coverageEnd
+
+    const subs = new Map([
+      [
+        SUBSCRIBER_A.toLowerCase(),
+        {
+          subscription: { ratePerSecond: 100n, coverageNotional: 4_000_000n, funded: 5_000_000n, lastSync: coverageEnd - 10n, coveredSeconds: 0n, claimed: false },
+          runwaySeconds: 40_000n,
+        },
+      ],
+    ]);
+    const client = fakeClient({ epoch, subs });
+    const wallet = fakeWallet(async () => ({ ok: false, reason: "receipt wait failed: timed out" }));
+
+    const summary = await runKeeperTick({
+      journal,
+      client: client as never,
+      address: ADDR,
+      keeperAddress: KEEPER,
+      logger: silentLogger,
+      tuning: defaultTuning,
+      seedBlock: 0n,
+      wallet,
+      dryRun: false,
+      now: () => now,
+    });
+
+    expect(summary.results[0]!.decision.reason).toBe("epoch-ending"); // the gate still says it's due
+    expect(summary.results[0]!.sendResult).toEqual({ ok: false, reason: "receipt wait failed: timed out" });
+    // The bug this guards against: dropping here throws away the keeper's only
+    // remaining chance to sweep this premium into capacityPool via `sync`.
+    expect(summary.results[0]!.dropReason).toBeUndefined();
+    expect(listActiveSubscriptions(journal)).toHaveLength(1);
+  });
+
+  it("does NOT drop a subscription in dry-run mode, even though the epoch is past coverageEnd", async () => {
+    // status.ts always calls runKeeperTick with dryRun:true and describes itself as
+    // "read-only" / "never touches the journal or sends anything." A dry run never
+    // calls wallet.send, so if the drop rule fires anyway it silently untracks a
+    // subscription that was never actually synced -- corrupting the registry from
+    // what is supposed to be a side-effect-free status check.
+    seedSubscription(journal, 2n, SUBSCRIBER_A);
+    const coverageEnd = 1_000_000n;
+    const epoch: EpochState = { coverageStart: 0n, coverageEnd, reportDeadline: 2_000_000n, reported: false, payoffWad: 0n, totalCoverageSold: 0n };
+    const now = coverageEnd + 500n;
+
+    const subs = new Map([
+      [
+        SUBSCRIBER_A.toLowerCase(),
+        {
+          subscription: { ratePerSecond: 100n, coverageNotional: 4_000_000n, funded: 5_000_000n, lastSync: coverageEnd - 10n, coveredSeconds: 0n, claimed: false },
+          runwaySeconds: 40_000n,
+        },
+      ],
+    ]);
+    const client = fakeClient({ epoch, subs });
+    const wallet = fakeWallet(async () => ({ ok: true, hash: "0xshould-not-be-sent", receipt: {} as never }));
+
+    const summary = await runKeeperTick({
+      journal,
+      client: client as never,
+      address: ADDR,
+      keeperAddress: KEEPER,
+      logger: silentLogger,
+      tuning: defaultTuning,
+      seedBlock: 0n,
+      wallet,
+      dryRun: true,
+      now: () => now,
+    });
+
+    expect(summary.results[0]!.decision.reason).toBe("epoch-ending");
+    expect(summary.results[0]!.sendResult).toBeUndefined();
+    expect(wallet.send).not.toHaveBeenCalled();
+    expect(summary.results[0]!.dropReason).toBeUndefined();
+    expect(listActiveSubscriptions(journal)).toHaveLength(1);
+  });
+
   it("a failure reading one subscription is logged and does not stop the tick for the others", async () => {
     seedSubscription(journal, 2n, SUBSCRIBER_A);
     seedSubscription(journal, 2n, SUBSCRIBER_B);

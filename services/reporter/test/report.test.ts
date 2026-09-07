@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { WAD } from "@volatus/onchain";
 import { buildReportPayoffArgs, reportEpoch } from "../src/report.js";
-import type { Journal } from "@volatus/service-kit";
+import { openJournal, type Journal } from "@volatus/service-kit";
 import type { PublicClient } from "viem";
 import type { Wallet } from "@volatus/service-kit";
 
@@ -150,5 +150,55 @@ describe("reportEpoch wiring", () => {
 
     expect(send).not.toHaveBeenCalled();
     expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("a ReportWindowClosed revert is terminal: the second tick never resends, even though the epoch is still unreported", async () => {
+    // Uses a real journal (not a mock) so `claim()`'s state machine actually gates
+    // the second call -- BACKEND_HANDOFF.md's revert table plus outcomes.ts both say
+    // ReportWindowClosed must never be retried, and a mocked journal could pass this
+    // test without the production claim()/recordDone() wiring actually doing that.
+    const journal = openJournal(":memory:");
+    const arcClient = {
+      readContract: vi.fn(async () => ({
+        coverageEnd: 1_789_153_388n,
+        reportDeadline: 1_789_239_788n,
+        reported: false, // stays false: the fail-safe path, nobody ever reports it
+        payoffWad: 0n,
+        coverageStart: 0n,
+        totalCoverageSold: 0n,
+      })),
+    } as unknown as PublicClient;
+
+    const send = vi.fn(async () => ({
+      ok: false as const,
+      reason: "reverted: ReportWindowClosed",
+      revertName: "ReportWindowClosed",
+    }));
+    const arcWallet = { address: "0xreporter", send, balance: vi.fn(), requireBalance: vi.fn() } as unknown as Wallet;
+    const alert = vi.fn(async () => {});
+
+    const params = {
+      epochId: 2n,
+      payoffWad: 500_000_000_000_000_000n,
+      journal,
+      arcClient,
+      arcWallet,
+      logger: fakeLogger(),
+      alert,
+      dryRun: false,
+    };
+
+    await reportEpoch(params); // tick 1: attempts, hits the revert, journals it terminal
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith("error", expect.stringContaining("ReportWindowClosed"), expect.any(Object));
+
+    const record = journal.get("reporter", "reportPayoff", "2");
+    expect(record?.status).toBe("done"); // done, not failed -- failed would be reclaimable
+    expect(record?.txHash).toBe("terminal-failure"); // sentinel, never a real hash
+
+    await reportEpoch(params); // tick 2: must not resend a revert that can only ever repeat
+    expect(send).toHaveBeenCalledTimes(1); // still 1 -- no second attempt
+
+    journal.close();
   });
 });

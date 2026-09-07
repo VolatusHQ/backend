@@ -110,6 +110,23 @@ describe("getLogsChunked — chunk boundaries", () => {
     expect(calls[0]).toBe(CHAIN_LOG_LIMITS[1301]);
   });
 
+  it("a single-block range (fromBlock === toBlock) makes exactly one call covering that one block", async () => {
+    const calls: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+    const client = fakeClient(undefined, (params) => {
+      calls.push(params);
+      return [];
+    });
+    await getLogsChunked({
+      client: client as never,
+      address: "0x0000000000000000000000000000000000000001",
+      event: testEvent,
+      fromBlock: 500n,
+      toBlock: 500n,
+      maxRange: 9_000n,
+    });
+    expect(calls).toEqual([{ fromBlock: 500n, toBlock: 500n }]);
+  });
+
   it("rejects toBlock before fromBlock", async () => {
     const client = fakeClient(undefined, () => []);
     await expect(

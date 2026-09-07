@@ -213,6 +213,16 @@ async function tickOneSubscription(
   // Evaluate the drop rule (and, if warranted, drop) *after* the send above, so a
   // subscription that just crossed coverageEnd or ran dry gets one last attempt at
   // sweeping whatever premium is still unswept before it leaves the registry.
+  //
+  // That last attempt only counts if it actually landed. `decision.due` can be true
+  // while nothing was actually synced -- a dry run, a missing wallet, or a real
+  // `sendResult.ok === false` -- and in every one of those cases the premium between
+  // `lastSync` and `coverageEnd` never moved into `capacityPool`. Dropping anyway
+  // would permanently stop the keeper from ever retrying that sweep, on the strength
+  // of on-chain state (`subscription.funded`, `now`) that was read *before* the send
+  // this tick and so does not reflect it either way.
+  const syncStillOwed = decision.due && sendResult?.ok !== true;
+
   const dropReason = evaluateDropReason({
     ratePerSecond: subscription.ratePerSecond,
     funded: subscription.funded,
@@ -220,7 +230,12 @@ async function tickOneSubscription(
     runwaySeconds,
     now: nowTs,
   });
-  if (dropReason) {
+  if (dropReason && syncStillOwed) {
+    deps.logger.warn(
+      "keeper: would drop subscription but a due sync did not land this tick -- keeping it tracked for a retry",
+      { epochId: epochId.toString(), subscriber, dropReason },
+    );
+  } else if (dropReason) {
     dropTrackedSubscription(deps.journal, epochId, subscriber, dropReason, deps.logger);
   }
 
@@ -234,6 +249,6 @@ async function tickOneSubscription(
     decision,
     gasCostEstimateUsdc,
     sendResult,
-    dropReason: dropReason ?? undefined,
+    dropReason: dropReason && !syncStillOwed ? dropReason : undefined,
   };
 }
