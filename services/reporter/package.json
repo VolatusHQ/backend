@@ -1,0 +1,29 @@
+{
+  "name": "@volatus/reporter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Settlement reporter: mirrors SigmaVault epochs onto Arc and carries the settled payoff across chains (BACKEND_HANDOFF.md Service 1, DECISIONS.md §12).",
+  "main": "./dist/index.js",
+  "bin": {
+    "volatus-reporter": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/index.js",
+    "status": "node dist/index.js status"
+  },
+  "dependencies": {
+    "@volatus/onchain": "workspace:*",
+    "@volatus/service-kit": "workspace:*",
+    "viem": "^2.56.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

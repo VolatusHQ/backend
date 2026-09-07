@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    // ES2022, not ES2020: every chain quantity here is a bigint (block numbers,
+    // WAD payoffs, unix timestamps) and this runs under plain Node, never a
+    // browser target with a bigint-literal ceiling. Matches @volatus/service-kit.
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "test", "dist", "node_modules"]
+}
