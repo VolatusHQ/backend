@@ -11,9 +11,11 @@
     "test": "vitest run",
     "start": "node dist/index.js start",
     "status": "node dist/index.js status",
-    "once": "node dist/index.js once"
+    "once": "node dist/index.js once",
+    "provision:privy": "tsc -p scripts/tsconfig.json && node scripts/dist/provisionPrivy.js"
   },
   "dependencies": {
+    "@privy-io/node": "^0.34.0",
     "@volatus/onchain": "workspace:*",
     "@volatus/service-kit": "workspace:*",
     "viem": "^2.56.3",

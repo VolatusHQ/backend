@@ -73,6 +73,23 @@ export const hedgerConfigShape = {
   /** The key `localSigner.ts` uses when the flag above is set — testnet only, never a user's key. See README.md § Delegation. */
   DEPLOYER_PRIVATE_KEY: privateKeySchema.optional(),
 
+  /**
+   * Which `Signer` implementation `index.ts` builds for `start`/`once`.
+   * `"local"` (default) is the testnet demonstration path above. `"privy"`
+   * is the production delegation path (`delegation/privySessionSigner.ts` +
+   * `delegation/privyClient.ts`) and requires `PRIVY_APP_ID`,
+   * `PRIVY_APP_SECRET` and `PRIVY_WALLET_ID` — the last one comes from
+   * running `scripts/provisionPrivy.ts` once, which also creates the policy
+   * the wallet is bound to.
+   */
+  HEDGER_SIGNER_MODE: z.enum(["local", "privy"]).default("local"),
+  PRIVY_APP_ID: z.string().optional(),
+  PRIVY_APP_SECRET: z.string().optional(),
+  /** The wallet id `scripts/provisionPrivy.ts` printed — not the wallet's address. */
+  PRIVY_WALLET_ID: z.string().optional(),
+  /** Must match `policy/sigma-hedger-v1.json`'s `policyId` unless a rotated successor was provisioned. */
+  PRIVY_POLICY_ID: z.string().default("sigma-hedger-v1"),
+
   /* ---- Mandate fields: see this file's header for why these are env-configured. ---- */
   HEDGER_MANDATE_ID: z.string().default("demo-epoch2"),
   HEDGER_OWNER_ADDRESS: z.string().default(DEMO_OWNER_ADDRESS),
