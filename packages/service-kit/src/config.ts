@@ -22,7 +22,7 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { z } from "zod";
@@ -157,7 +157,7 @@ export function resolveJournalPath(configured?: string): string {
   const root = getRepoRoot();
   const path =
     configured && configured.length > 0
-      ? configured.startsWith("/")
+      ? isAbsolute(configured)
         ? configured
         : join(root, configured)
       : join(root, "services", ".journal.sqlite");
