@@ -7,12 +7,28 @@
  *
  * **These credentials are not provisioned in this environment.** BRIEF.md is
  * explicit: `CIRCLE_API_KEY`/`CIRCLE_ENTITY_SECRET` are not available here.
- * This module is therefore built against the real SDK's documented types and
- * unit-tested against a mock client (`circleAgentWallet.test.ts`) — it has
- * never been exercised against Circle's live API, and this service defaults
- * to `UNDERWRITER_WALLET_MODE=local` for exactly that reason (`config.ts`).
- * Do not read this module's presence as evidence the Circle path was
- * verified end to end; it was not.
+ * This module is therefore unit-tested against a mock client
+ * (`circleAgentWallet.test.ts`) — it has never been exercised against
+ * Circle's live API, and this service defaults to
+ * `UNDERWRITER_WALLET_MODE=local` for exactly that reason (`config.ts`). Do
+ * not read this module's presence as evidence the Circle path was verified
+ * end to end; the actual API round trips were not.
+ *
+ * **What has been checked, and how it differs from a guess.** `CircleWalletsClient`
+ * below is checked directly against `@circle-fin/developer-controlled-wallets`'s
+ * installed `.d.ts` files (its `CircleDeveloperControlledWalletsClient`
+ * class, returned by `initiateDeveloperControlledWalletsClient(...)`) —
+ * `getWallet({id}) => TrimDataResponse<WalletResponse>` (`{data?: {wallet:
+ * {id, address, ...}}}`), `createContractExecutionTransaction({walletId,
+ * contractAddress, abiFunctionSignature, abiParameters, amount, fee})`, and
+ * `getTransaction({id, waitForState, pollingInterval}) =>
+ * TrimDataResponse<TransactionResponse>` (`{data?: {transaction?: {txHash,
+ * state, errorReason, errorDetails}}}`) all match exactly. `index.ts` passes
+ * the real client to `makeCircleAgentWallet` with no cast, and it compiles —
+ * TypeScript would reject the assignment if the shapes had drifted. What
+ * remains unverified is everything only Circle's live API can confirm:
+ * authentication actually succeeding, a real wallet id resolving, a real
+ * transaction actually landing on Arc.
  *
  * **Naming note.** `.agents/skills/use-agent-wallet/` describes a different,
  * human-in-the-loop product: the `circle` CLI's OTP-authenticated wallet,

@@ -54,7 +54,13 @@ async function buildWallet(config: ReturnType<typeof loadUnderwriterConfig>): Pr
     // The SDK client is constructed here and injected, so `circleAgentWallet.ts`
     // stays testable against a plain object. This path has never run against
     // Circle's live API — no credentials are provisioned in this environment —
-    // so it is built and unit-tested, not verified.
+    // so it is built and unit-tested, not verified. The client is passed to
+    // `makeCircleAgentWallet` with no cast: `CircleWalletsClient`'s hand-written
+    // shape was checked directly against `@circle-fin/developer-controlled-wallets`
+    // installed `.d.ts` files (getWallet/createContractExecutionTransaction/
+    // getTransaction on the ergonomic client `initiateDeveloperControlledWalletsClient`
+    // returns), and the real class satisfies it structurally — TypeScript would
+    // reject this assignment if that were no longer true.
     const { initiateDeveloperControlledWalletsClient } = await import(
       "@circle-fin/developer-controlled-wallets"
     );
@@ -63,7 +69,7 @@ async function buildWallet(config: ReturnType<typeof loadUnderwriterConfig>): Pr
       entitySecret: config.CIRCLE_ENTITY_SECRET,
     });
     return makeCircleAgentWallet({
-      client: client as unknown as Parameters<typeof makeCircleAgentWallet>[0]["client"],
+      client,
       publicClient: arcClient,
       walletId: config.CIRCLE_WALLET_ID,
       feeLevel: config.CIRCLE_FEE_LEVEL,
