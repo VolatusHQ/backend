@@ -23,6 +23,14 @@
  * Idempotency: running this twice creates a second policy and a second
  * wallet. Privy does not dedupe by content. If you re-run this, either reuse
  * the printed ids or delete the old ones from the dashboard first.
+ *
+ * **Re-targeting after a SigmaStream redeploy.** A policy's rules are pinned
+ * to whatever `SIGMA_STREAM` resolved to at the time it was created — a
+ * redeploy changes that address, so the old policy still exists and still
+ * enforces, it just permits calls to a contract that no longer matters. Set
+ * `PRIVY_UPDATE_EXISTING_WALLET_ID` to update an already-funded wallet's
+ * `policy_ids` to a freshly built policy targeting the current
+ * `SIGMA_STREAM`, instead of creating (and having to fund) a new wallet.
  */
 
 import { PrivyClient } from "@privy-io/node";
@@ -117,6 +125,20 @@ async function main(): Promise<void> {
   });
 
   console.log(`Policy created: ${policy.id}`);
+
+  const existingWalletId = process.env.PRIVY_UPDATE_EXISTING_WALLET_ID;
+  if (existingWalletId) {
+    console.log(`Updating existing wallet ${existingWalletId} to use this policy...`);
+    const wallet = await privy.wallets().update(existingWalletId, { policy_ids: [policy.id] });
+    console.log("");
+    console.log("Done. services/.env.local's PRIVY_WALLET_ID is unchanged (same wallet, new policy):");
+    console.log("");
+    console.log(`PRIVY_WALLET_ID=${wallet.id}`);
+    console.log(`Wallet address: ${wallet.address}`);
+    console.log(`No new funding needed — this wallet was already funded.`);
+    return;
+  }
+
   console.log(`Creating a wallet on Arc Testnet with that policy attached...`);
 
   const wallet = await privy.wallets().create({
