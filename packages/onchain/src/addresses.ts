@@ -104,6 +104,16 @@ export const SIGMA_STREAM: Address = "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9
 export const LIVE_EPOCH_ID = 2n;
 
 /**
+ * The one real subscriber on `LIVE_EPOCH_ID` today — the deployer/demo LP,
+ * matching `services/hedger/src/config.ts`'s `DEMO_OWNER_ADDRESS`. Not a
+ * secret; it is a public address, and reading its subscription needs no
+ * wallet connection — `readSubscription` is a plain view call keyed by any
+ * address. `apps/web`'s copy of this file uses it to show a live subscriber's
+ * coverage state publicly on `/app/markets` (HANDOFF.md § Frontend).
+ */
+export const DEMO_SUBSCRIBER_ADDRESS: Address = "0x7975E591c26e6c6D9B0CFd9A81f6d61A921C080c";
+
+/**
  * The Arc block `SIGMA_STREAM` was deployed in.
  *
  * Log scanning must start here, never at 0. Arc prunes history — `fromBlock: 0`
