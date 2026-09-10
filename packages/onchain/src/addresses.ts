@@ -80,18 +80,28 @@ export const TICK_SPACING = 60;
 /* ---------- Arc Testnet (5042002) — the premium stream ---------- */
 
 /**
- * Redeployed 2026-09-05. The old address, `0xD7EeD2a64762A7038d64886882161bA1b1EfC074`,
- * is dead: its `settlementReporter` is `immutable` and was set at construction
- * to `0x364EDC06…5609`, a key nobody on the team holds, so no epoch on it
- * could ever be reported and every subscriber there is permanently limited to
- * the `reclaimUnreported` fail-safe. This deployment's `settlementReporter` is
- * `0xFf54812Fc9EC92E51a22f67a92Cd2c09a049E30c`, held by the team.
+ * Redeployed 2026-09-08, same reason as the 2026-09-05 redeploy before it: the
+ * previous address, `0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9`, has its
+ * `settlementReporter` set to `0xFf54812Fc9EC92E51a22f67a92Cd2c09a049E30c` — a
+ * key that turned out to live only on a teammate's machine, unreachable before
+ * Arc epoch 2's 2026-09-12 report deadline. Rather than wait, the contract was
+ * redeployed (as `VolatusStream`, from the new `VolatusHQ/contracts` repo —
+ * same logic, renamed) with `settlementReporter` set to a fresh key generated
+ * and held for this purpose, `0x3c400B31e2b3356985796832b81C2212Ad1BdF6D`.
+ * Epoch 2 was re-mirrored immediately in the same deploy script run, targeting
+ * the same `coverageEnd`/`reportDeadline` window the original mirror used.
  *
- * `apps/web/app/app/lib/onchain/addresses.ts` still points at the old address
- * until the frontend is re-pointed (WIRING.md § Redeploy) — see
- * `test/drift.test.ts` for the explicit, temporary exemption.
+ * The two prior addresses are both dead for the same structural reason: an
+ * `immutable settlementReporter` that nobody who actually needs to operate the
+ * reporter can sign with. `0xD7EeD2a64762A7038d64886882161bA1b1EfC074` (the
+ * original) and `0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9` (2026-09-05) are
+ * both permanently limited to their subscribers' `reclaimUnreported`.
+ *
+ * The ABI is unchanged — `VolatusStream`'s Solidity contract name differs from
+ * `SigmaStream`'s, but Solidity contract names are not part of the ABI, so
+ * `sigmaStreamAbi` below still decodes it correctly without any changes.
  */
-export const SIGMA_STREAM: Address = "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9";
+export const SIGMA_STREAM: Address = "0xE44b6a47b29b097CE5c20BF17830cfb5df734354";
 
 /**
  * The only epoch mirrored onto Arc today. One place to bump when the vault
@@ -104,14 +114,18 @@ export const SIGMA_STREAM: Address = "0x6C35BEC76B7c43DDdbF0b46E3402D1461b4233D9
 export const LIVE_EPOCH_ID = 2n;
 
 /**
- * The one real subscriber on `LIVE_EPOCH_ID` today — the deployer/demo LP,
- * matching `services/hedger/src/config.ts`'s `DEMO_OWNER_ADDRESS`. Not a
- * secret; it is a public address, and reading its subscription needs no
- * wallet connection — `readSubscription` is a plain view call keyed by any
- * address. `apps/web`'s copy of this file uses it to show a live subscriber's
- * coverage state publicly on `/app/markets` (HANDOFF.md § Frontend).
+ * The one real subscriber on `LIVE_EPOCH_ID` today — matching
+ * `services/hedger/src/config.ts`'s `DEMO_OWNER_ADDRESS`. Updated 2026-09-10:
+ * this is now the keeper's own wallet, real-subscribed on the redeployed
+ * `SIGMA_STREAM` above (`postCapacity` 10 USDC, `subscribe` rate 55 / notional
+ * 4 USDC, `fund` 4 USDC — all three confirmed on Arc; the previous address had
+ * no subscription on the fresh contract). Not a secret; it is a public
+ * address, and reading its subscription needs no wallet connection —
+ * `readSubscription` is a plain view call keyed by any address. `apps/web`'s
+ * copy of this file uses it to show a live subscriber's coverage state
+ * publicly on `/app/markets` (HANDOFF.md § Frontend).
  */
-export const DEMO_SUBSCRIBER_ADDRESS: Address = "0x7975E591c26e6c6D9B0CFd9A81f6d61A921C080c";
+export const DEMO_SUBSCRIBER_ADDRESS: Address = "0xD717489b5A7CC47dF2a8057ce4658002026FE5de";
 
 /**
  * The Arc block `SIGMA_STREAM` was deployed in.

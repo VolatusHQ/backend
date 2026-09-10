@@ -45,8 +45,16 @@ import type { Mandate } from "./mandate.js";
  */
 export const MEASURED_VAULT_DEPLOY_BLOCK = 61_561_322n;
 
-/** The deployer / demo LP + underwriter address — BRIEF.md's ground truth. Not a secret; it is a public address. */
-export const DEMO_OWNER_ADDRESS: Address = "0x7975E591c26e6c6D9B0CFd9A81f6d61A921C080c";
+/**
+ * The demo LP + underwriter address. Updated 2026-09-10: the previous address,
+ * `0x7975E591c26e6c6D9B0CFd9A81f6d61A921C080c`, has no subscription on the
+ * redeployed `VolatusStream` (`0xE44b6a47b29b097CE5c20BF17830cfb5df734354`) —
+ * a fresh contract starts with zero subscribers, zero capacity. This is the
+ * keeper's own operational wallet, real-subscribed on-chain: `postCapacity`
+ * (10 USDC), `subscribe(epochId 2, rate 55, notional 4 USDC)`, `fund` (4 USDC),
+ * all three confirmed on Arc. Not a secret; it is a public address.
+ */
+export const DEMO_OWNER_ADDRESS: Address = "0xD717489b5A7CC47dF2a8057ce4658002026FE5de";
 
 export const hedgerConfigShape = {
   UNICHAIN_SEPOLIA_RPC: rpcUrlSchema,
