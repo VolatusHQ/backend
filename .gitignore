@@ -31,3 +31,6 @@ pnpm-debug.log*
 
 # service-kit tx journal (better-sqlite3) — see packages/service-kit/src/journal.ts
 services/.journal.sqlite*
+
+# Personal
+AnandPending.md
