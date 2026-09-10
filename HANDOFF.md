@@ -1,48 +1,70 @@
 # Handoff — what is left
 
-Written 2026-09-05, at the end of the backend pass. What is **done** is in
+Written 2026-09-05, at the end of the backend pass. **Updated 2026-09-06** after
+a second pass closed part of §1 and all of §3 — see the status line at the top
+of each section below. What is **done** is in
 [`BACKEND_PROGRESS.md`](./BACKEND_PROGRESS.md); this file is only the open work,
 ordered by what actually blocks a demo.
 
-Nothing here is blocked on code that does not exist. Most of it is blocked on
-credentials, on a clock, or on someone deciding something.
+Nothing here is blocked on code that does not exist. Everything left is blocked
+on a reply from someone outside this repo, on a clock, or on someone deciding
+something.
 
 ---
 
 ## 1. Two credentials, and the claims that depend on them
 
-**This is the largest honesty gap in the repo right now.** Both delegation paths
-are written and unit-tested against mocked clients. **Neither has ever run
-against a live API**, because no credentials are provisioned in this
-environment.
+**Status: code fixed and provisioned for real on both sides. Both are now
+blocked purely on a reply from outside the team — nothing left to build.**
 
-| | Needs | Where |
-|---|---|---|
-| Privy session signer | `PRIVY_APP_ID`, `PRIVY_APP_SECRET` | `services/hedger/src/delegation/privySessionSigner.ts` |
-| Circle agent wallet | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, `CIRCLE_WALLET_ID` | `services/underwriter/src/wallet/circleAgentWallet.ts` |
+Both delegation paths were originally written against a *guessed* SDK shape
+and unit-tested against a mock of that guess — never checked against what the
+real packages actually export. That guess was wrong for Privy and, it turned
+out, right for Circle. Both are now checked line-by-line against the installed
+`.d.ts` files of the real SDKs, not docs summaries:
 
-Until someone runs them, the README's central security claim —
+| | Needs | Where | Now blocked on |
+|---|---|---|---|
+| Privy session signer | `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `PRIVY_WALLET_ID` | `services/hedger/src/delegation/privyClient.ts` | **Privy Support enabling Arc Testnet** (`eip155:5042002`) for the app — see below |
+| Circle agent wallet | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, `CIRCLE_WALLET_ID` | `services/underwriter/src/wallet/circleAgentWallet.ts` | **Nobody has provisioned these credentials yet** — ask whoever owns the Circle account |
 
-> a fully compromised Volatus backend cannot move a user's funds anywhere except
-> into premium payments on the pool they authorised, and cannot exceed the
-> mandate
+**Privy — what actually happened.** `privyClient.ts` was rewritten against
+`@privy-io/node@0.34.0`'s real types (the ergonomic `PrivyClient` exposes
+`wallets()`/`policies()` as *methods*, not properties, and
+`wallets().ethereum().sendTransaction()` unwraps the `{method, data: {...}}`
+envelope for you — an earlier version of this code assumed a different,
+wrong shape). `scripts/provisionPrivy.ts` was run for real against the live
+Privy app (`cmto2m69k014s0cl7k1r56dmg`): it created policy
+`oewjjjsoc3fer1oi5luuqs0w` and wallet `ijhrb0nov4f6mxjiac76i0z9`
+(`0x4e2234E0365CAff02748D9551C881fF4B6FA8F52`), funded with testnet USDC.
+Running the hedger for real against it (`HEDGER_SIGNER_MODE=privy`,
+`node dist/index.js once`) gets exactly one error, from Privy's own API, not
+from this code:
 
-— is **designed for and not demonstrated**. The live hedger run used
-`localSigner`, which holds a key directly, refuses to construct without
-`HEDGER_ALLOW_LOCAL_SIGNER=1`, and **does not provide that property**. Do not
-present the recorded `adjust` as proof of the delegation model; it is proof of
-the re-rating loop.
+```
+401 {"error":"App is not authorized to transact on chain eip155:5042002"}
+```
 
-To close it: create a Privy app, provision a session signer under the policy in
-`services/hedger/policy/sigma-hedger-v1.json`, and run
-`HEDGER_SIGNER_MODE=privy node dist/index.js once`. The policy must allow the
-USDC `approve` to `SigmaStream` only — without it `fund` reverts, and it is easy
-to miss.
+Arc Testnet is not in Privy's self-serve chain list anywhere in the dashboard
+(checked Wallet infrastructure → Assets, → Advanced → Smart wallets, → Advanced
+→ More — none of them cover it). A message was sent to Privy's support channel
+on 2026-09-05 asking them to enable it; **as of this writing there is no
+reply.** Once one lands, re-run the exact command above — nothing else should
+need to change. If Privy's answer is "you can't," the documented fallback is
+a Circle Modular Wallet (ERC-4337 + ERC-6900) with a session-key module
+expiring at `coverageEnd`. See `.agents/skills/use-modular-wallets/`.
 
-If Privy's policy engine cannot express the mandate, the documented fallback is
-a Circle Modular Wallet (ERC-4337 + ERC-6900) with a session-key module expiring
-at `coverageEnd` — the same guarantee enforced on chain instead of in a TEE.
-See `.agents/skills/use-modular-wallets/`.
+**Circle — what actually happened.** `index.ts` was passing the real
+`initiateDeveloperControlledWalletsClient()` client to `makeCircleAgentWallet`
+through an `as unknown as` cast, which silently skipped type-checking. The
+cast has been removed and it now compiles clean with **no cast at all** —
+real, structural proof `CircleWalletsClient`'s hand-written shape
+(`getWallet`, `createContractExecutionTransaction`, `getTransaction`) matches
+the real SDK, not just an assumption. What is still unverified is everything
+only a live API call can confirm: authentication succeeding, a real wallet id
+resolving, a transaction actually landing on Arc. Nobody has provided
+`CIRCLE_API_KEY`/`CIRCLE_ENTITY_SECRET`/`CIRCLE_WALLET_ID` yet — ask whoever
+manages the team's Circle developer account.
 
 **Note:** Circle's CLI spending policies are **mainnet-only**. On testnet the
 caps live in `services/underwriter/src/caps.ts` and the journal. Do not imply
@@ -52,12 +74,26 @@ Circle enforces anything on this network.
 
 ## 2. Arc epoch 2 — a real deadline, on a clock
 
+**Status: still not running. Still blocked on the reporter key, below.**
+
 Arc epoch 2 is open and unreported. `reportDeadline` is **1789239788**
-(2026-09-12). The vault's epoch 2 ends at Unichain block **62301001**.
+(2026-09-12). The vault's epoch 2 ends at Unichain block **62301001** — as of
+2026-09-06 the chain is at block **61813011**, so roughly 488,000 blocks
+(~5.6 days at ~1s/block) remain. Re-check both live before trusting these —
+they were read directly off both chains, not copied from an earlier doc.
 
 If the reporter is not running when that block passes, and nobody reports before
 the deadline, **every subscriber is refunded and every underwriter reclaims
 capacity**. That is the fail-safe working, but it is not the demo.
+
+**The keeper, unlike the reporter, is unblocked and has been proven live.** It
+needs no privileged key — `sync()` is permissionless — so a fresh throwaway
+key was generated, funded with testnet USDC via the Circle faucet, and run for
+real on 2026-09-05: it synced real premium multiple times, each with its own
+tx hash on Arc. It was stopped (gracefully, `SIGTERM`) when the machine running
+it shut down, not because of a bug. Anyone can restart it — see § Running any
+of it — or run it continuously somewhere that stays on; it does not need to be
+the same person who resolves the reporter key.
 
 ```bash
 cd services/reporter && node dist/index.js status   # what it thinks is pending
@@ -87,24 +123,34 @@ mocks, not as a revert string.
 
 ---
 
-## 3. Frontend — one real gap, one recommendation
+## 3. Frontend — one gap fixed, one still open, one recommendation
 
-**Not reachable in the shipped UI.** `PHASES.md` phase 4 is `🔶` for a reason
-that survived this pass: the subscriber-level view of a live subscription
-(`funded`, `runwaySeconds`, `coveredSeconds`) has **no reachable route**. Arc
-epoch 2's subscription has run dry, which is the lapsed-coverage fail-safe
-happening for real on chain, and a visitor cannot see it. That is the most
-valuable honest state the protocol has and it is invisible.
+**The reachability gap is fixed as of 2026-09-06.** The subscriber-level view
+of a live subscription (`funded`, `runwaySeconds`, `coveredSeconds`) previously
+had no reachable route — you could only see it by connecting the exact wallet
+that holds the subscription. `apps/web/app/app/markets/page.tsx` now reads
+`readSubscription(LIVE_EPOCH_ID, DEMO_SUBSCRIBER_ADDRESS)` server-side (a plain
+view call, no wallet needed) and a new `SubscriberPanel` in `LiveFeed.tsx`
+renders it publicly on `/app/markets`, including an honest message when
+coverage has lapsed — the most valuable state the protocol has, now visible to
+every visitor rather than only whoever holds one specific key. The same pass
+also fixed `LiveFeed.tsx`'s stat rows, which used `flex-wrap` with a different
+number of stats per panel and looked visually unaligned across the two-column
+layout; they are now a consistent CSS grid.
 
-**`adjust` is in the ABI but wired to nothing.** It is deployed now, so the
-subscriber card in `apps/web/app/app/components/volatus/LiveStreamActions.tsx`
-*could* offer it. Deliberately not wired in this pass — the recommendation is to
-add it, but it is a product decision, not a bug.
+**`adjust` is in the ABI but wired to nothing.** Still true, still deliberate —
+the subscriber card in
+`apps/web/app/app/components/volatus/LiveStreamActions.tsx` *could* offer a
+human-triggered re-rate now that `adjust` is deployed. Not wired, because
+whether a human should be able to re-rate their own coverage by hand is a
+product decision, not a bug.
 
-**Screenshots were never taken.** `FRONTEND_VERIFIER.md`'s governing rule is
-that a check answered from the code does not count. No route was captured at
-three widths in this pass. **Phase 2's "honest empty states" claim is therefore
-asserted, not verified.** Run the verifier before believing it.
+**Screenshots still were never taken.** `FRONTEND_VERIFIER.md`'s governing rule
+is that a check answered from the code does not count, and that still holds
+for the new panel: it was verified by reading the rendered HTML output over
+`curl`, not from an actual screenshot at three widths. **Phase 2's "honest
+empty states" claim, and now this panel's layout claim, are asserted from
+markup, not verified from an image.** Run the verifier before believing either.
 
 ---
 
@@ -125,10 +171,12 @@ stream actually costs. Arc Testnet is Gateway domain 26. See
 
 ## 5. Decisions that are someone's, not the code's
 
-- **Who holds the reporter key?** It is currently a fresh testnet throwaway in
-  `services/.env.local` that passed through an agent session. A 2-of-3 multisig
-  is the right answer before this is anything but a demo. It is `immutable`, so
-  changing it means another redeploy.
+- **Who holds the reporter key?** It is currently a fresh testnet throwaway that
+  passed through an agent session, and lives only in whoever ran that session's
+  local `services/.env.local` — confirmed 2026-09-06 that it is **not** the
+  person picking up this handoff next; it needs to come from whoever holds it.
+  A 2-of-3 multisig is the right answer before this is anything but a demo. It
+  is `immutable`, so changing it means another redeploy.
 - **`reclaimUnreported` does not `_sync` first** (`DECISIONS.md` §15). On the
   fail-safe path the split between a subscriber's refund and underwriter income
   therefore depends on when someone last called the permissionless `sync`. It is
@@ -158,5 +206,26 @@ Every service has `status` (always read-only, never sends) and `DRY_RUN=1`
 is the fastest way to see what the chain actually looks like right now, and none
 of it can spend anything.
 
-Full checks: `pnpm -r test` (331), `cd contracts && forge test` (167),
+**The hedger's `status` needs zero credentials at all** — `index.ts` never
+constructs a signer for it, so it is always safe to run, even with nothing in
+`.env.local` but the two RPC URLs. `once`/`start` read `HEDGER_SIGNER_MODE`
+(`local` default, or `privy` — see §1) to decide which signer to build, and
+throw with a clear message if that mode's required config is missing, rather
+than silently falling back to the other.
+
+**Getting the keeper running for real needs no coordination with anyone** —
+`sync()` is permissionless. Generate a throwaway key, fund it a few dollars of
+Arc testnet USDC via [faucet.circle.com](https://faucet.circle.com), put it in
+`KEEPER_PRIVATE_KEY`/`KEEPER_ADDRESS`, then `cd services/keeper && node
+dist/index.js start`. It picks up exactly where its registry/journal left off
+on restart.
+
+Full checks: `pnpm -r test` (335), `cd contracts && forge test` (167),
 `pnpm -F web build`.
+
+**A drift trap to know about:** `packages/onchain/test/drift.test.ts` iterates
+every constant `apps/web`'s onchain copy exports and fails if
+`@volatus/onchain` doesn't export the same name with the same value. Adding a
+constant to one tree without the other (e.g. `DEMO_SUBSCRIBER_ADDRESS`,
+2026-09-06) fails this test immediately — `pnpm -r test` catches it, so run
+that before pushing any change to either `addresses.ts`.
