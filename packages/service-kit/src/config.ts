@@ -86,11 +86,12 @@ export const privateKeySchema = z
 export const optionalUrlSchema = z.string().url("must be a valid URL").optional();
 
 /**
- * Config field names that hold key material. Kept in sync by hand with
- * `commonConfigShape` below — there are only two today. Pass this to
- * `createLogger({ redactKeys: SENSITIVE_CONFIG_KEYS })`.
+ * Config field names that hold key material. Kept in sync by hand with each
+ * service's own config shape — `ROLLER_PRIVATE_KEY` belongs only to
+ * `services/roller`, not to `commonConfigShape` below, since it is not a var
+ * every service needs. Pass this to `createLogger({ redactKeys: SENSITIVE_CONFIG_KEYS })`.
  */
-export const SENSITIVE_CONFIG_KEYS = ["REPORTER_PRIVATE_KEY", "KEEPER_PRIVATE_KEY"] as const;
+export const SENSITIVE_CONFIG_KEYS = ["REPORTER_PRIVATE_KEY", "KEEPER_PRIVATE_KEY", "ROLLER_PRIVATE_KEY"] as const;
 
 /**
  * The vars every service in `BACKEND_HANDOFF.md` needs. A given service uses

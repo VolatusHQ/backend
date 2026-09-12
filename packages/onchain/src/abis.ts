@@ -58,6 +58,56 @@ export const sigmaOracleAbi = [
       { name: "cap", type: "uint256" },
     ],
   },
+  {
+    type: "function",
+    name: "curator",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  /**
+   * Points an epoch at the v4 pool that prices its VAR-LONG. One-shot per
+   * epoch and `curator`-only (`src/VolatusOracle.sol:97`) — this is the
+   * `roller` service's write, run right after it opens a new epoch and seeds
+   * that epoch's vol pool.
+   */
+  {
+    type: "function",
+    name: "registerVolPool",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "epochId", type: "uint256" },
+      {
+        name: "volPoolKey",
+        type: "tuple",
+        components: [
+          { name: "currency0", type: "address" },
+          { name: "currency1", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "hooks", type: "address" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "VolPoolRegistered",
+    inputs: [
+      { name: "epochId", type: "uint256", indexed: true },
+      { name: "volPoolId", type: "bytes32", indexed: true },
+      { name: "longIsCurrency0", type: "bool", indexed: false },
+    ],
+  },
+  /* Every custom error VolatusOracle declares (contracts/src/VolatusOracle.sol). */
+  { type: "error", name: "ZeroAddress", inputs: [] },
+  { type: "error", name: "NotCurator", inputs: [] },
+  { type: "error", name: "AlreadyRegistered", inputs: [{ name: "epochId", type: "uint256" }] },
+  { type: "error", name: "LegNotInPool", inputs: [{ name: "epochId", type: "uint256" }] },
+  { type: "error", name: "NoActiveEpoch", inputs: [{ name: "id", type: "bytes32" }] },
+  { type: "error", name: "NoVolPool", inputs: [{ name: "epochId", type: "uint256" }] },
+  { type: "error", name: "VolPoolNotInitialized", inputs: [{ name: "epochId", type: "uint256" }] },
 ] as const;
 
 export const sigmaHookAbi = [
@@ -365,6 +415,78 @@ export const poolSwapTestAbi = [
         components: [
           { name: "takeClaims", type: "bool" },
           { name: "settleUsingBurn", type: "bool" },
+        ],
+      },
+      { name: "hookData", type: "bytes" },
+    ],
+    // BalanceDelta is a packed int256: amount0 in the high 128, amount1 in the low.
+    outputs: [{ name: "delta", type: "int256" }],
+  },
+] as const;
+
+/**
+ * The v4 singleton itself. Only `initialize` is needed here — seeding a new
+ * epoch's vol pool (`roller`'s `reseedVolPool`) has to create that pool
+ * before anything can trade or add liquidity in it.
+ */
+export const poolManagerAbi = [
+  {
+    type: "function",
+    name: "initialize",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "key",
+        type: "tuple",
+        components: [
+          { name: "currency0", type: "address" },
+          { name: "currency1", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "hooks", type: "address" },
+        ],
+      },
+      { name: "sqrtPriceX96", type: "uint160" },
+    ],
+    outputs: [{ name: "tick", type: "int24" }],
+  },
+  /** `Pool.sol:47` — thrown by `initialize` when the pool's `sqrtPriceX96`
+   *  is already nonzero. The one error `roller`'s reseed needs to recognize
+   *  as "already done," since it retries the whole reseed sequence on any
+   *  step's failure and a repeat `initialize` call is otherwise a hard stop. */
+  { type: "error", name: "PoolAlreadyInitialized", inputs: [] },
+] as const;
+
+/**
+ * `PoolModifyLiquidityTest` from v4-core. Testnet convenience, same as
+ * `poolSwapTestAbi` — how `roller` seeds liquidity into a freshly-initialized
+ * vol pool right after `registerVolPool`, mirroring `script/SettleAndRoll.s.sol`.
+ */
+export const poolModifyLiquidityTestAbi = [
+  {
+    type: "function",
+    name: "modifyLiquidity",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "key",
+        type: "tuple",
+        components: [
+          { name: "currency0", type: "address" },
+          { name: "currency1", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "hooks", type: "address" },
+        ],
+      },
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tickLower", type: "int24" },
+          { name: "tickUpper", type: "int24" },
+          { name: "liquidityDelta", type: "int256" },
+          { name: "salt", type: "bytes32" },
         ],
       },
       { name: "hookData", type: "bytes" },

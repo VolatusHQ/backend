@@ -21,22 +21,30 @@ export const SIGMA_VAULT: Address = "0xF45894c8384c440FC63Da67Bc6050e77FcaF4e83"
 export const VARIANCE_TOKEN_IMPL: Address = "0xBE28c060b7F6Cb8C055430eA1CE75d8C577b2d21";
 
 /**
- * Redeployed 2026-09-05, and the reason matters.
+ * Redeployed twice now, and both times for the same reason.
  *
  * `registerVolPool` is `curator`-only and `curator` is `immutable`. On the
- * original oracle (`0xd7602c41…a7c`) it is `0x364EDC06…5609` — the deployer
+ * original oracle (`0xd7602c41…a7c`) it was `0x364EDC06…5609` — the deployer
  * key nobody holds, the same one stranded as SigmaStream's `settlementReporter`
- * (PHASES.md § Ground truth). So no epoch after the first could ever have a vol
- * pool registered on it: no implied volatility, no price, nothing to trade,
+ * (PHASES.md § Ground truth). The 2026-09-05 redeploy (`0x94F50Fb5…C59e5`) set
+ * `curator` to `0x7975E591…c080c`, an address that isn't the known-dead key
+ * but also isn't any key held in `services/.env.local` -- unverified, not
+ * relied on further.
+ *
+ * This redeploy (2026-09-12) sets `curator` to the roller service's own
+ * wallet (`ROLLER_ADDRESS`), confirmed live by `cast call curator()`, so the
+ * roller can register every future epoch's vol pool with a key this repo
+ * actually holds. No epoch after the first could otherwise ever have a vol
+ * pool registered: no implied volatility, no price, nothing to trade,
  * permanently.
  *
  * The oracle holds no funds and stores nothing but that registry — it derives
- * everything else from the vault and the hook, which are unchanged — so
- * replacing it costs nothing and unblocks every future epoch. Integrators
- * reading the old address still get epoch 1's frozen answer; this is the live
- * one.
+ * everything else from the vault and the hook, which are unchanged across all
+ * three deployments — so replacing it costs nothing and unblocks every future
+ * epoch. Integrators reading an old address still get whatever epoch was
+ * registered against it, frozen; this is the live one.
  */
-export const SIGMA_ORACLE: Address = "0x94F50Fb5b417024F66A80d6515b52E25426C59e5";
+export const SIGMA_ORACLE: Address = "0x51f7D166FE0C040F9e9Ee7236Bc3dC3E2183B33a";
 
 export const MOCK_WETH: Address = "0xde45563c9c596fC761e3a18ABB66aE51904de0F4";
 export const MOCK_USDC: Address = "0xd00FaDdE160cecbB3ad946BE3542b9553c5B582B";

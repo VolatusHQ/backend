@@ -86,13 +86,39 @@ export interface TickSummary {
 export async function runUnderwriterTick(deps: TickDeps): Promise<TickSummary> {
   const nowTs = deps.now ? deps.now() : BigInt(Math.floor(Date.now() / 1000));
 
-  const market = await readMarketSignal({
-    client: deps.unichainClient,
-    oracleAddress: deps.oracleAddress,
-    vaultAddress: deps.vaultAddress,
-    hookAddress: deps.hookAddress,
-    poolId: deps.poolId,
-  });
+  // `VolatusOracle.realizedVol`/`impliedVol` both revert `NoActiveEpoch` when
+  // `activeEpoch(poolId) == 0` -- a real, if brief, window: the pool sits
+  // there between an epoch settling and the next one opening (e.g. while
+  // `services/roller` is mid-rollover). `readMarketSignal` does not guard
+  // against that revert, so it is wrapped here rather than letting an
+  // expected transient state crash the whole tick. Falls back to the same
+  // "no data" shape `dataSufficient`/`oracleOk` already exist to represent
+  // (see signals.ts's module doc) -- `policy.ts` already holds on that.
+  let market: MarketSignal;
+  try {
+    market = await readMarketSignal({
+      client: deps.unichainClient,
+      oracleAddress: deps.oracleAddress,
+      vaultAddress: deps.vaultAddress,
+      hookAddress: deps.hookAddress,
+      poolId: deps.poolId,
+    });
+  } catch (err) {
+    deps.logger.warn("underwriter: readMarketSignal reverted (likely no active epoch mid-rollover) -- treating as no data this tick", {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    market = {
+      oracleOk: false,
+      impliedVolWad: 0n,
+      realizedVolWad: 0n,
+      hasActiveEpoch: false,
+      accumulatorNow: 0n,
+      startAccumulator: 0n,
+      observations: 0,
+      dataSufficient: false,
+      spreadWad: null,
+    };
+  }
 
   const [capacityPool, totalShares, ownShares, latestArcBlock] = await Promise.all([
     deps.arcClient.readContract({ address: deps.streamAddress, abi: sigmaStreamAbi, functionName: "capacityPool" }),

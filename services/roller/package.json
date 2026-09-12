@@ -1,0 +1,29 @@
+{
+  "name": "@volatus/roller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Epoch roller + demo trading bot, served as a pingable HTTP endpoint (settle/roll the vault epoch, keep the pool visibly alive, serve /vol-history for the frontend's severity score).",
+  "main": "./dist/index.js",
+  "bin": {
+    "volatus-roller": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/index.js serve",
+    "status": "node dist/index.js status"
+  },
+  "dependencies": {
+    "@volatus/onchain": "workspace:*",
+    "@volatus/service-kit": "workspace:*",
+    "viem": "^2.56.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
