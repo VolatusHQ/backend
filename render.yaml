@@ -29,5 +29,7 @@ services:
         value: "600"
       - key: DEMO_BOT_ENABLED
         value: "1"
+      - key: DEMO_BOT_VOL_SWAP_PROB
+        value: "0.9"
       - key: ROLLER_SELF_TICK_INTERVAL_MS
-        value: "120000"
+        value: "60000"
