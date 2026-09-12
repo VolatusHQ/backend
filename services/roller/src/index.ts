@@ -26,6 +26,7 @@ import { buildRollerStatus, formatRollerStatus } from "./status.js";
 import { tick, type TickContext } from "./tick.js";
 import { makeHistoryStore } from "./history.js";
 import { makeRollerWallet } from "./wallet.js";
+import { startLiveFeed } from "./live.js";
 
 async function main(): Promise<void> {
   const command = process.argv[2] ?? "serve";
@@ -73,7 +74,18 @@ async function main(): Promise<void> {
   }
 
   // command === "serve" (default): HTTP server always; internal loop only if configured.
-  startServer({ port: config.PORT, history, logger, runTick: () => tick(ctx) });
+  const { broadcastLive } = startServer({ port: config.PORT, history, logger, runTick: () => tick(ctx) });
+
+  // The live feed runs unconditionally, unlike the self-tick loop below --
+  // it only needs the HTTP server above to exist (for the WS upgrade), not a
+  // tick, so it works the same whether this instance rolls epochs itself or
+  // is purely ping-driven.
+  startLiveFeed({
+    client: unichainClient,
+    logger,
+    onEvent: broadcastLive,
+    pollIntervalMs: config.LIVE_POLL_INTERVAL_MS,
+  });
 
   if (config.ROLLER_SELF_TICK_INTERVAL_MS) {
     const loop: RunningLoop = runLoop({

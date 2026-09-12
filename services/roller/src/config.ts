@@ -55,6 +55,13 @@ export const rollerConfigShape = {
    *  only when something happens to hit the endpoint. Unset disables it,
    *  leaving the service purely ping-driven. */
   ROLLER_SELF_TICK_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+
+  /** How often `serve`'s live feed (`live.ts`) polls the chain for new vol-pool
+   *  swaps and re-broadcasts to every connected WebSocket client. Independent
+   *  of `ROLLER_SELF_TICK_INTERVAL_MS` — the live feed always runs in `serve`
+   *  mode, ping-driven or not, since it only needs the HTTP server to exist
+   *  for the WS upgrade, not a tick. */
+  LIVE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(4000),
 };
 
 export type RollerConfig = z.infer<z.ZodObject<typeof rollerConfigShape>>;

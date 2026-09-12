@@ -12,19 +12,31 @@
  *   - `GET /vol-history?poolId=` Feature B's trailing-history source, CORS-open
  *     (it only leaks public on-chain-derived numbers, same posture as every
  *     other read in `frontend/app/app/lib/onchain/reads.ts`).
+ *   - `WS /live`       `live.ts`'s feed, relayed to every connected browser.
+ *     Attached to this same `http.Server` (not a second port) -- Render's
+ *     free tier exposes exactly one port per web service, and `ws` upgrades
+ *     an existing HTTP server rather than needing its own listener.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { WebSocketServer, type WebSocket } from "ws";
 import { MEASURED_POOL_ID } from "@volatus/onchain";
 import type { HistoryStore } from "./history.js";
 import type { TickSummary } from "./tick.js";
 import type { Logger } from "./journalReconcile.js";
+import type { LiveEvent } from "./live.js";
 
 export interface ServerDeps {
   port: number;
   history: HistoryStore;
   logger: Logger;
   runTick: () => Promise<TickSummary>;
+}
+
+export interface ServerHandle {
+  server: ReturnType<typeof createServer>;
+  /** Fan out one `live.ts` event to every currently-connected browser. */
+  broadcastLive(event: LiveEvent): void;
 }
 
 function jsonSafe(value: unknown): unknown {
@@ -45,7 +57,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-export function startServer(deps: ServerDeps): ReturnType<typeof createServer> {
+export function startServer(deps: ServerDeps): ServerHandle {
   const { port, history, logger, runTick } = deps;
 
   let tickInFlight = false;
@@ -98,9 +110,42 @@ export function startServer(deps: ServerDeps): ReturnType<typeof createServer> {
     sendJson(res, 404, { error: `no such route: ${url.pathname}` });
   });
 
+  // `path: "/live"` so this socket can't be confused with a plain HTTP GET
+  // landing on `/` -- the browser dials `wss://.../live` explicitly.
+  const wss = new WebSocketServer({ server, path: "/live" });
+  const liveClients = new Set<WebSocket>();
+  // The only event worth replaying to a client that connects mid-epoch --
+  // trades and market ticks are transient by nature, but "which pool is this"
+  // is state a brand-new socket needs immediately, not on the next poll.
+  let lastEpochEvent: LiveEvent | null = null;
+
+  wss.on("connection", (socket) => {
+    liveClients.add(socket);
+    logger.info("roller: live client connected", { clients: liveClients.size });
+    if (lastEpochEvent) socket.send(JSON.stringify(lastEpochEvent));
+
+    socket.on("close", () => {
+      liveClients.delete(socket);
+      logger.info("roller: live client disconnected", { clients: liveClients.size });
+    });
+    // A socket that errors still fires `close` right after in `ws` -- this
+    // just stops it logging as an ordinary disconnect.
+    socket.on("error", (err) => {
+      logger.warn("roller: live client socket error", { err: err.message });
+    });
+  });
+
+  function broadcastLive(event: LiveEvent): void {
+    if (event.type === "epoch") lastEpochEvent = event;
+    const payload = JSON.stringify(event);
+    for (const socket of liveClients) {
+      if (socket.readyState === socket.OPEN) socket.send(payload);
+    }
+  }
+
   server.listen(port, () => {
     logger.info(`roller: HTTP server listening on :${port}`, { port });
   });
 
-  return server;
+  return { server, broadcastLive };
 }

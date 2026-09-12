@@ -19,10 +19,12 @@
     "@volatus/onchain": "workspace:*",
     "@volatus/service-kit": "workspace:*",
     "viem": "^2.56.3",
+    "ws": "^8.21.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
