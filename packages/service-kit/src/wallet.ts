@@ -23,6 +23,7 @@ import {
   type Chain,
   type Hash,
   type TransactionReceipt,
+  type Transport,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -30,6 +31,8 @@ export interface MakeWalletOptions {
   chain: Chain;
   privateKey: `0x${string}`;
   rpcUrl: string;
+  /** Replaces the plain `http(rpcUrl)` transport, e.g. with a rotating one. */
+  transport?: Transport;
   /** Multiplies viem's estimated gas and fee fields before every send. Default `1`. */
   gasMultiplier?: number;
   /** Retries with a bumped fee after a stuck/underpriced send. Default `3`. */
@@ -95,7 +98,7 @@ export function makeWallet(opts: MakeWalletOptions): Wallet {
   } = opts;
 
   const account = privateKeyToAccount(privateKey);
-  const transport = http(rpcUrl, { timeout: 15_000, retryCount: 2 });
+  const transport = opts.transport ?? http(rpcUrl, { timeout: 15_000, retryCount: 2 });
   const publicClient = createPublicClient({ chain, transport });
   const walletClient = createWalletClient({ account, chain, transport });
 

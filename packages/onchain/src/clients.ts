@@ -1,5 +1,6 @@
-import { createPublicClient, http, type HttpTransport, type PublicClient } from "viem";
+import { createPublicClient, http, type HttpTransport, type PublicClient, type Transport } from "viem";
 import { arcTestnet, unichainSepolia } from "./chains.js";
+import { rotatingTransport, unichainRpcUrls } from "./transport.js";
 
 /**
  * One read-only client per chain, created at module scope so a request does
@@ -11,18 +12,16 @@ import { arcTestnet, unichainSepolia } from "./chains.js";
  * `batch: { multicall: true }` collapses the several reads a job needs into
  * one `eth_call` multicall round trip where the RPC supports it.
  *
- * RPC URLs are overridable via `UNICHAIN_SEPOLIA_RPC` / `ARC_TESTNET_RPC` so a
- * service can point at a private or rate-limit-friendly endpoint without a
- * code change; both fall back to the public testnet defaults baked into
- * `chains.ts`.
+ * `UNICHAIN_SEPOLIA_RPC` is the primary; on failure reads rotate through the
+ * public list in `transport.ts`. `ARC_TESTNET_RPC` overrides Arc's public
+ * default in `chains.ts`.
  */
 
-const unichainRpc = process.env.UNICHAIN_SEPOLIA_RPC || undefined;
 const arcRpc = process.env.ARC_TESTNET_RPC || undefined;
 
-export const unichainClient: PublicClient<HttpTransport, typeof unichainSepolia> = createPublicClient({
+export const unichainClient: PublicClient<Transport, typeof unichainSepolia> = createPublicClient({
   chain: unichainSepolia,
-  transport: http(unichainRpc, { timeout: 10_000, retryCount: 2 }),
+  transport: rotatingTransport(unichainRpcUrls(process.env.UNICHAIN_SEPOLIA_RPC || undefined)),
   batch: { multicall: true },
 });
 
