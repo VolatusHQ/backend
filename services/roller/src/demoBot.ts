@@ -33,6 +33,15 @@ import { poolKeyFor } from "./roll.js";
 const MIN_SQRT_PRICE = 4295128739n;
 const MAX_SQRT_PRICE = 1461446703485210103287273052203988822378723970342n;
 
+/**
+ * `swapSizeWad` is scaled for mWETH's 18 decimals. mUSDC -- and VAR-LONG /
+ * VAR-SHORT, which inherit `_legDecimals = collateral.decimals()` from it
+ * (VolatusVault.sol) -- are 6dp. Spending a WAD-scaled size unconverted in
+ * either would be ~1e12x too large, walking the pool's price to its
+ * physical min/max sqrtPrice in one swap regardless of seeded liquidity.
+ */
+const WAD_TO_USDC_UNITS = 10n ** 12n; // 18 - 6
+
 export interface DemoBotDeps {
   client: PublicClient;
   wallet: Wallet;
@@ -99,20 +108,23 @@ async function runUnderlyingSwap(deps: DemoBotDeps): Promise<void> {
   await ensureAllowance(client, wallet, MOCK_USDC, SWAP_ROUTER, size);
 
   const zeroForOne = random() < 0.5;
+  // MEASURED_POOL_KEY.currency0 is mUSDC (6dp), currency1 is mWETH (18dp) --
+  // see WAD_TO_USDC_UNITS above for why spending currency0 needs rescaling.
+  const spendSize = zeroForOne ? size / WAD_TO_USDC_UNITS : size;
   const result = await wallet.send({
     address: SWAP_ROUTER,
     abi: poolSwapTestAbi,
     functionName: "swap",
     args: [
       MEASURED_POOL_KEY,
-      { zeroForOne, amountSpecified: -size, sqrtPriceLimitX96: zeroForOne ? MIN_SQRT_PRICE + 1n : MAX_SQRT_PRICE - 1n },
+      { zeroForOne, amountSpecified: -spendSize, sqrtPriceLimitX96: zeroForOne ? MIN_SQRT_PRICE + 1n : MAX_SQRT_PRICE - 1n },
       { takeClaims: false, settleUsingBurn: false },
       "0x",
     ],
   });
 
   if (result.ok) {
-    logger.info("demo bot: underlying-pool swap landed", { zeroForOne, sizeWad: size.toString(), hash: result.hash });
+    logger.info("demo bot: underlying-pool swap landed", { zeroForOne, sizeWad: size.toString(), spendSize: spendSize.toString(), hash: result.hash });
   } else {
     logger.warn("demo bot: underlying-pool swap failed, skipping this round", { reason: result.reason });
   }
@@ -137,7 +149,8 @@ async function runVolPoolSwap(deps: DemoBotDeps): Promise<void> {
   const longIsCurrency0 = longToken.toLowerCase() < MOCK_USDC.toLowerCase();
   const volKey = poolKeyFor(longToken, MOCK_USDC);
 
-  const size = jitteredSize(deps.swapSizeWad / 2n, deps.swapSizeJitterPct, random); // vol pool is thinner; trade smaller
+  // Both legs here (VAR-LONG and mUSDC) are 6dp -- see WAD_TO_USDC_UNITS above.
+  const size = jitteredSize(deps.swapSizeWad / 2n / WAD_TO_USDC_UNITS, deps.swapSizeJitterPct, random); // vol pool is thinner; trade smaller
   const buyingLong = random() < 0.5;
 
   const topUp = size * 20n;
