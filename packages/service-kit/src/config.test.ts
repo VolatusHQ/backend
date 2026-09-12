@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { loadConfig, privateKeySchema, rpcUrlSchema } from "./config.js";
+import { loadConfig, optionalUrlSchema, privateKeySchema, rpcUrlSchema } from "./config.js";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -30,5 +30,30 @@ describe("loadConfig", () => {
     expect(config.SOME_TEST_RPC).toBe("https://example.invalid");
     expect(config.SOME_TEST_KEY).toBe(`0x${"11".repeat(32)}`);
     expect(config.OPTIONAL_THING).toBeUndefined();
+  });
+});
+
+describe("optionalUrlSchema", () => {
+  it("an unset variable parses to undefined", () => {
+    delete process.env.SOME_TEST_WEBHOOK;
+    const config = loadConfig({ SOME_TEST_WEBHOOK: optionalUrlSchema });
+    expect(config.SOME_TEST_WEBHOOK).toBeUndefined();
+  });
+
+  it("an empty string -- what a blank dashboard field like Render's actually sets -- also parses to undefined, not a validation error", () => {
+    process.env.SOME_TEST_WEBHOOK = "";
+    const config = loadConfig({ SOME_TEST_WEBHOOK: optionalUrlSchema });
+    expect(config.SOME_TEST_WEBHOOK).toBeUndefined();
+  });
+
+  it("a real URL still parses through unchanged", () => {
+    process.env.SOME_TEST_WEBHOOK = "https://example.invalid/hook";
+    const config = loadConfig({ SOME_TEST_WEBHOOK: optionalUrlSchema });
+    expect(config.SOME_TEST_WEBHOOK).toBe("https://example.invalid/hook");
+  });
+
+  it("a non-empty, non-URL string still fails loudly rather than being silently dropped", () => {
+    process.env.SOME_TEST_WEBHOOK = "not-a-url";
+    expect(() => loadConfig({ SOME_TEST_WEBHOOK: optionalUrlSchema })).toThrowError(/SOME_TEST_WEBHOOK/);
   });
 });

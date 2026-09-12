@@ -83,7 +83,19 @@ export const privateKeySchema = z
   .string({ required_error: "required: a 0x-prefixed 64-hex-char private key" })
   .regex(/^0x[0-9a-fA-F]{64}$/, "must be 0x followed by exactly 64 hex characters");
 
-export const optionalUrlSchema = z.string().url("must be a valid URL").optional();
+/**
+ * Optional URL, tolerant of an *empty* string as well as a genuinely absent
+ * variable. The two are indistinguishable in a dashboard like Render's: an
+ * optional field left blank sets the env var to `""` rather than omitting
+ * it, and `z.string().url().optional()` alone treats that as "provided but
+ * invalid" and fails the whole service's boot. Preprocessing `""` to
+ * `undefined` here makes "blank" and "not set" mean the same thing, which is
+ * what a human leaving a field empty actually intends.
+ */
+export const optionalUrlSchema = z.preprocess(
+  (v) => (v === "" ? undefined : v),
+  z.string().url("must be a valid URL").optional(),
+);
 
 /**
  * Config field names that hold key material. Kept in sync by hand with each
