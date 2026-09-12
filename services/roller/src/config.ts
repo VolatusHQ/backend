@@ -43,6 +43,9 @@ export const rollerConfigShape = {
    *  variance stays the dominant source of activity. */
   DEMO_BOT_VOL_SWAP_PROB: z.coerce.number().min(0).max(1).default(0.2),
   DEMO_BOT_SWAP_SIZE_WAD: z.coerce.bigint().default(2_000_000_000_000_000_000n), // 2e18
+  /** Raw 6dp units per vol-pool swap (mUSDC in, or VAR-LONG in). 300 against
+   *  the ~13.7k mUSDC a fresh vol pool holds moves VAR-LONG a few percent. */
+  DEMO_BOT_VOL_SWAP_SIZE: z.coerce.bigint().default(300_000_000n),
   /** +/- this fraction of `DEMO_BOT_SWAP_SIZE_WAD`, so continuous operation
    *  does not look like a metronome. */
   DEMO_BOT_SWAP_SIZE_JITTER_PCT: z.coerce.number().min(0).max(1).default(0.4),

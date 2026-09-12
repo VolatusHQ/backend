@@ -344,8 +344,21 @@ async function openNextEpoch(
 
   const outcome = classifyOpenEpochRevert(result.revertName);
   if (outcome.kind === "success") {
-    journal.recordDone(SERVICE, "openEpoch", key, "already-open-onchain", { reconciled: true });
-    return null; // someone else's epoch is now active; nothing for this tick to reseed
+    // `PoolAlreadyHasAnActiveEpoch` also comes back when the simulation runs
+    // against a node still behind our own `settle` — it sees the epoch we just
+    // closed as active. Journaling that as done blocks this roll for good, so
+    // only accept it once a newer epoch is actually visible.
+    const activeNow = await client.readContract({ address: SIGMA_VAULT, abi: sigmaVaultAbi, functionName: "activeEpoch", args: [poolId] });
+    if (activeNow > oldEpochId) {
+      journal.recordDone(SERVICE, "openEpoch", key, "already-open-onchain", { reconciled: true, activeEpochId: activeNow.toString() });
+      return null; // someone else's epoch is now active; nothing for this tick to reseed
+    }
+    journal.recordFailed(SERVICE, "openEpoch", key, `PoolAlreadyHasAnActiveEpoch but activeEpoch reads ${activeNow} -- lagging read, retrying`);
+    logger.warn(`openEpoch after ${oldEpochId} hit a lagging read of the epoch we just settled, will retry next tick`, {
+      oldEpochId: oldEpochId.toString(),
+      activeNow: activeNow.toString(),
+    });
+    return null;
   }
   if (outcome.kind === "fatal") {
     journal.recordFailed(SERVICE, "openEpoch", key, outcome.reason);
@@ -433,7 +446,13 @@ async function reseedVolPool(params: RollDeps & { newEpochId: bigint; longToken:
     },
   ];
 
-  for (const step of steps) {
+  // A retry after a later step failed must not mint a second pair: the first
+  // attempt's mintPair already landed if the wallet holds this epoch's long leg
+  // (nothing else gives it any before the pool is seeded).
+  const longHeld = await client.readContract({ address: longToken, abi: erc20Abi, functionName: "balanceOf", args: [wallet.address] });
+  const toRun = longHeld > 0n ? steps.filter((s) => !["mint USDC", "approve vault", "mintPair"].includes(s.label)) : steps;
+
+  for (const step of toRun) {
     const result = await step.send();
     if (result.ok) continue;
 

@@ -61,6 +61,7 @@ export async function tick(ctx: TickContext): Promise<TickSummary> {
           poolId,
           volSwapProb: config.DEMO_BOT_VOL_SWAP_PROB,
           swapSizeWad: config.DEMO_BOT_SWAP_SIZE_WAD,
+          volSwapSize: config.DEMO_BOT_VOL_SWAP_SIZE,
           swapSizeJitterPct: config.DEMO_BOT_SWAP_SIZE_JITTER_PCT,
         })
       : { ran: false, kind: "disabled" };
