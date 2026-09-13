@@ -394,6 +394,32 @@ async function reseedVolPool(params: RollDeps & { newEpochId: bigint; longToken:
     return await isDoneOnChain();
   }
 
+  // From here on, `journal` already holds this claim `in_flight` (set by
+  // `resolveClaim` above). Any throw between here and the next `recordDone`/
+  // `recordFailed` -- a transient RPC error on one of the plain `readContract`
+  // calls below being the observed real-world case -- would otherwise leave
+  // that row stuck `in_flight` with no tx hash forever: `resolveClaim`'s own
+  // contract refuses to ever auto-retry that state (journalReconcile.ts), so
+  // nothing short of an operator manually clearing the journal recovers.
+  // Catching here and recording `failed` instead keeps a network blip a
+  // one-tick delay, per the journal's documented "failed is reclaimable" rule.
+  try {
+    return await reseedVolPoolSteps({ ...params, key, longToken });
+  } catch (error) {
+    journal.recordFailed(SERVICE, "reseedVolPool", key, error);
+    logger.warn(`reseedVolPool(${key}) threw before completing, will retry next tick`, {
+      epochId: key,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+async function reseedVolPoolSteps(
+  params: RollDeps & { newEpochId: bigint; longToken: Address; key: string },
+): Promise<boolean> {
+  const { client, wallet, journal, logger, alert, newEpochId, longToken, key } = params;
+
   const volKey = poolKeyFor(longToken, MOCK_USDC);
   const sqrtPriceX96 = sqrtPriceFor(longToken, MOCK_USDC, params.initialVarPriceWad);
 
