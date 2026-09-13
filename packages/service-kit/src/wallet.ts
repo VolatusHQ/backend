@@ -63,7 +63,23 @@ export interface Wallet {
   requireBalance(min: bigint): Promise<void>;
 }
 
-const RETRYABLE_REASON_RE = /replacement transaction underpriced|receipt wait (timed out|failed)|nonce too low/i;
+/**
+ * `panic` is here because of a specific, observed failure mode: the wallet's
+ * own transport now rotates across several RPC endpoints (`transport.ts`),
+ * and `approve` landing via one node while `mintPair`'s `simulateContract`
+ * reads allowance from a different, laggier one reproduces as a genuine
+ * Solidity panic (arithmetic underflow — the stale read sees allowance 0)
+ * rather than a plain RPC error. It is the same class of problem as
+ * `nonce too low` — a provider that has not yet caught up to a transaction
+ * this same wallet just sent — and deserves the same retry-after-resync
+ * treatment, not an immediate, permanent failure.
+ */
+const RETRYABLE_REASON_RE = /replacement transaction underpriced|receipt wait (timed out|failed)|nonce too low|panic/i;
+
+/** How long to wait before resyncing nonce/state after a retryable failure —
+ *  long enough for a laggier rotation endpoint to have ingested the block a
+ *  previous attempt's transaction landed in. */
+const RESYNC_DELAY_MS = 1_500;
 
 /** `value * multiplier`, done in integer arithmetic to avoid float rounding on wei-scale bigints. */
 function scaleBigInt(value: bigint, multiplier: number): bigint {
@@ -200,6 +216,10 @@ export function makeWallet(opts: MakeWalletOptions): Wallet {
         last = await attemptOnce(args, attempt);
         if (last.ok) return last;
         if (attempt === maxRetries || !RETRYABLE_REASON_RE.test(last.reason)) return last;
+        // Give a laggier rotation endpoint time to ingest whatever this same
+        // wallet's previous attempt already landed, before asking it again —
+        // resyncing immediately just re-reads the same stale state.
+        await new Promise((resolve) => setTimeout(resolve, RESYNC_DELAY_MS));
         await resyncNonce();
       }
       return last;
